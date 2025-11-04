@@ -5,102 +5,47 @@ let selectedIndex = 0;
 let filteredMacros = [];
 
 // === CRIAR PAINEL ===
-// === CRIAR PAINEL (compatível com BIRD) ===
 function createMacroPanel() {
   if (macroPanel && document.body.contains(macroPanel)) return macroPanel;
-
-  // Cria container isolado
-  const container = document.createElement("div");
-  container.id = "macro-assistant-root";
-  container.style.position = "fixed";
-  container.style.zIndex = "9999999";
-  container.style.pointerEvents = "none"; // painel ainda recebe eventos internamente
-  document.body.appendChild(container);
-
-  // Cria Shadow DOM para evitar interferência do React/Slate
-  const shadow = container.attachShadow({ mode: "open" });
-
-  // Cria o painel dentro do shadow
-  const panel = document.createElement("div");
-  panel.id = "macro-paste-panel";
+  
+  const panel = document.createElement('div');
+  panel.id = 'macro-paste-panel';
+  
+  // Atributos para garantir que fique acima de modais
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'false');
+  panel.style.zIndex = '2147483647';
+  panel.style.position = 'fixed';
+  panel.style.pointerEvents = 'auto';
+  
   panel.innerHTML = `
-    <style>
-      :host {
-        all: initial;
-        font-family: sans-serif;
-      }
-      #macro-paste-panel {
-        background: #1f1f1f;
-        color: #fff;
-        border-radius: 8px;
-        box-shadow: 0 4px 25px rgba(0,0,0,0.35);
-        width: 280px;
-        overflow: hidden;
-        pointer-events: all;
-      }
-      #macro-search {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 8px 12px;
-        border: none;
-        outline: none;
-        font-size: 14px;
-        background: #2c2c2c;
-        color: #fff;
-      }
-      #macro-list {
-        max-height: 300px;
-        overflow-y: auto;
-      }
-      .macro-item {
-        padding: 6px 10px;
-        cursor: pointer;
-        font-size: 13px;
-        border-bottom: 1px solid rgba(255,255,255,0.08);
-      }
-      .macro-item.selected {
-        background: #0078ff;
-      }
-      .empty {
-        padding: 10px;
-        text-align: center;
-        color: #aaa;
-      }
-    </style>
     <input type="text" id="macro-search" placeholder="Buscar..." autocomplete="off">
     <div id="macro-list"></div>
   `;
-  shadow.appendChild(panel);
-
+  
+  document.body.appendChild(panel);
   macroPanel = panel;
-
-  // Eventos dentro do shadow
-  const search = shadow.querySelector("#macro-search");
-  search.addEventListener("input", handleSearch);
-  search.addEventListener("keydown", handleKeydown);
-
-  // Capturar eventos dentro do shadow
-  shadow.addEventListener("keydown", e => e.stopImmediatePropagation(), { capture: true });
-  shadow.addEventListener("click", e => e.stopImmediatePropagation(), { capture: true });
-
+  
+  const searchInput = panel.querySelector('#macro-search');
+  const macroList = panel.querySelector('#macro-list');
+  
+  // Garante que eventos não sejam bloqueados
+  searchInput.addEventListener('input', handleSearch);
+  searchInput.addEventListener('keydown', handleKeydown);
+  
+  // Impede propagação de eventos para o modal
+  panel.addEventListener('mousedown', (e) => e.stopPropagation(), true);
+  panel.addEventListener('click', (e) => e.stopPropagation(), true);
+  panel.addEventListener('keydown', (e) => e.stopPropagation(), true);
+  panel.addEventListener('keyup', (e) => e.stopPropagation(), true);
+  
   return panel;
 }
-
-// === LISTENER GLOBAL COM CAPTURE TRUE ===
-document.addEventListener("keydown", blockGreaterThan, { capture: true });
-document.addEventListener("keypress", blockGreaterThan, { capture: true });
 
 // === POSICIONAR PAINEL ===
 function positionPanel(element) {
   const rect = element.getBoundingClientRect();
-
-  if (macroPanel && macroPanel.getRootNode().host) {
-    const host = macroPanel.getRootNode().host;
-    host.style.top = rect.bottom + 5 + "px";
-    host.style.left = rect.left + "px";
-  }
-
-  const panelHeight = 350;
+  const panelHeight = 350; // Altura aproximada do painel (300px lista + 50px busca)
   const screenHeight = window.innerHeight;
   const screenMiddle = screenHeight / 2;
   
@@ -144,10 +89,30 @@ function showMacroPanel(element) {
     const panel = createMacroPanel();
     displayMacros();
     
-    panel.style.display = 'block';
+    // Remove e adiciona novamente para garantir que fique por cima
+    if (panel.parentElement) {
+      panel.parentElement.removeChild(panel);
+    }
+    document.body.appendChild(panel);
+    
+    // Força z-index e pointer-events inline (mais forte que CSS)
+    panel.style.cssText = `
+      display: block !important;
+      position: fixed !important;
+      z-index: 2147483647 !important;
+      pointer-events: auto !important;
+    `;
+    
     positionPanel(element);
     
-    setTimeout(() => panel.querySelector('#macro-search').focus(), 10);
+    // Foca com delay maior para garantir renderização
+    setTimeout(() => {
+      const searchInput = panel.querySelector('#macro-search');
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.click(); // Garante ativação
+      }
+    }, 50);
   });
 }
 
@@ -429,8 +394,22 @@ function blockGreaterThan(e) {
 // === LISTENERS GLOBAIS ===
 document.addEventListener('keydown', blockGreaterThan, true);
 document.addEventListener('keypress', blockGreaterThan, true);
-document.addEventListener('click', (e) => {
-  if (macroPanel && macroPanel.style.display === 'block' && !macroPanel.contains(e.target)) {
+
+// Listener de cliques - fecha painel ao clicar fora
+document.addEventListener('mousedown', (e) => {
+  if (macroPanel && macroPanel.style.display !== 'none') {
+    if (!macroPanel.contains(e.target)) {
+      hideMacroPanel();
+    }
+  }
+}, true);
+
+// Listener de ESC global
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && macroPanel && macroPanel.style.display !== 'none') {
+    e.preventDefault();
+    e.stopPropagation();
     hideMacroPanel();
+    if (currentInput) currentInput.focus();
   }
 }, true);
