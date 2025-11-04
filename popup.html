@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MacroPaste</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>MacroPaste</h1>
+    
+    <div class="form">
+      <input type="text" id="command" placeholder="Comando">
+      <textarea id="text" placeholder="Texto da macro..." rows="3"></textarea>
+      <button id="addMacro">Adicionar</button>
+    </div>
+
+    <div id="macroList" class="list"></div>
+
+    <div class="help">
+      <strong>›</strong> Digite <code>&gt;</code> em qualquer campo
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
