@@ -29,26 +29,20 @@ function createMacroPanel() {
   const searchInput = panel.querySelector('#macro-search');
   const macroList = panel.querySelector('#macro-list');
   
-  // Garante que eventos não sejam bloqueados
+  // Handlers normais
   searchInput.addEventListener('input', handleSearch);
   searchInput.addEventListener('keydown', handleKeydown);
   
-  // BLOQUEIA TODOS OS EVENTOS de vazarem para o modal (capture phase)
-  const stopEvent = (e) => {
+  // APENAS impede que eventos vazem para FORA do painel (não bloqueia internamente)
+  const stopPropagation = (e) => {
     e.stopPropagation();
-    e.stopImmediatePropagation();
   };
   
-  const eventTypes = [
-    'mousedown', 'mouseup', 'click', 'dblclick',
-    'keydown', 'keyup', 'keypress',
-    'touchstart', 'touchend', 'touchmove',
-    'focus', 'blur', 'input', 'change'
-  ];
-  
-  eventTypes.forEach(eventType => {
-    panel.addEventListener(eventType, stopEvent, true);
-  });
+  // Aplica apenas no painel (não em capture), para eventos vazarem para fora
+  panel.addEventListener('mousedown', stopPropagation, false);
+  panel.addEventListener('click', stopPropagation, false);
+  panel.addEventListener('keydown', stopPropagation, false);
+  panel.addEventListener('keyup', stopPropagation, false);
   
   return panel;
 }
@@ -147,20 +141,11 @@ function displayMacros() {
     item.className = 'macro-item' + (i === selectedIndex ? ' selected' : '');
     item.innerHTML = `<span class="cmd"><span class="icon">›</span>${cmd}</span><span class="txt">${txt.substring(0, 50)}</span>`;
     
-    // Handler de clique que impede propagação
+    // Handler de clique simples
     item.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
+      e.stopPropagation(); // Impede vazar para fora do painel
       selectMacro(i);
-    }, true);
-    
-    // Handler de mousedown também (alguns modais escutam mousedown)
-    item.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    }, true);
+    });
     
     // Hover atualiza seleção
     item.addEventListener('mouseenter', () => {
@@ -199,30 +184,27 @@ function handleSearch(e) {
 
 // === NAVEGAÇÃO COM TECLADO ===
 function handleKeydown(e) {
-  // Impede que eventos vazem para o modal do BIRD
-  e.stopPropagation();
-  e.stopImmediatePropagation();
+  // Apenas para teclas específicas, impede propagação
+  const handled = ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key);
+  
+  if (handled) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
   
   switch(e.key) {
     case 'ArrowDown':
-      e.preventDefault();
       selectedIndex = Math.min(selectedIndex + 1, filteredMacros.length - 1);
       updateSelection();
-      // Scroll automático do item selecionado
-      scrollToSelected();
       break;
     case 'ArrowUp':
-      e.preventDefault();
       selectedIndex = Math.max(selectedIndex - 1, 0);
       updateSelection();
-      scrollToSelected();
       break;
     case 'Enter':
-      e.preventDefault();
       selectMacro(selectedIndex);
       break;
     case 'Escape':
-      e.preventDefault();
       hideMacroPanel();
       if (currentInput) currentInput.focus();
       break;
