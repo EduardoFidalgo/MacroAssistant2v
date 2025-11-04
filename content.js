@@ -147,56 +147,180 @@ function handleKeydown(e) {
   }
 }
 
-// === DIGITAÇÃO HUMANA ===
-async function typeText(element, text, delay = 20) {
+// ===============================
+// DIGITAÇÃO ULTRA-REALISTA
+// ===============================
+// Simula perfeitamente uma pessoa real digitando
+// Engana Slate, Quill, React, BIRD Chat com eventos de teclado completos
+// ===============================
+
+/**
+ * Gera keyCode realista para cada caractere
+ */
+function getKeyCode(char) {
+  const code = char.charCodeAt(0);
+  if (char >= 'a' && char <= 'z') return char.toUpperCase().charCodeAt(0);
+  if (char >= 'A' && char <= 'Z') return code;
+  if (char >= '0' && char <= '9') return code;
+  
+  const specialKeys = {
+    ' ': 32, '\n': 13, '\t': 9, '.': 190, ',': 188, ';': 186,
+    ':': 186, '!': 49, '?': 191, '-': 189, '_': 189, '=': 187,
+    '+': 187, '[': 219, ']': 221, '{': 219, '}': 221, '\\': 220,
+    '|': 220, '/': 191, '<': 188, '>': 190, '(': 57, ')': 48,
+    "'": 222, '"': 222, '`': 192, '~': 192, '@': 50, '#': 51,
+    '$': 52, '%': 53, '^': 54, '&': 55, '*': 56
+  };
+  
+  return specialKeys[char] || code;
+}
+
+/**
+ * Verifica se caractere precisa de Shift
+ */
+function needsShift(char) {
+  return /[A-Z!@#$%^&*()_+{}|:"<>?~]/.test(char);
+}
+
+/**
+ * Calcula delay realista entre teclas com variação humana avançada
+ */
+function getHumanDelay(baseDelay, char, prevChar, isTypingFast) {
+  // Distribução gaussiana melhorada (4 valores para maior naturalidade)
+  const randomFactor = (Math.random() + Math.random() + Math.random() + Math.random()) / 4;
+  
+  // Variação base mais ampla
+  let delay = baseDelay + (baseDelay * randomFactor * 0.8);
+  
+  // Delays extras realistas baseados no caractere
+  if (char === ' ') delay *= 1.2; // Espaços levemente mais lentos
+  if (char === '.' || char === ',' || char === '!' || char === '?') delay *= 1.4; // Pontuação mais lenta
+  if (char === '\n') delay *= 1.8; // Quebra de linha mais pensada
+  if (char === char.toUpperCase() && /[A-Z]/.test(char) && prevChar === ' ') delay *= 1.3; // Início de frase
+  
+  // Padrão de digitação rápida/lenta (fadiga humana)
+  if (isTypingFast) {
+    delay *= 0.7; // 30% mais rápido
+  } else {
+    delay *= 1.15; // 15% mais lento
+  }
+  
+  // Variação extra aleatória final
+  delay += (Math.random() - 0.5) * 15;
+  
+  return Math.max(15, Math.floor(delay)); // Mínimo 15ms
+}
+
+/**
+ * Simula "pensar" durante a digitação (pausa natural)
+ */
+async function thinkPause() {
+  const pauseDuration = 80 + Math.random() * 180; // 80-260ms
+  await new Promise(r => setTimeout(r, pauseDuration));
+}
+
+/**
+ * Inserção instantânea via PASTE
+ * Simula Ctrl+V para inserir todo o texto de uma vez
+ */
+async function typeTextHuman(element, text) {
   if (!element || !text) return;
-  
+
   element.focus();
-  
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    
-    // Aguardar o delay ANTES de cada caractere (exceto o primeiro)
-    if (i > 0) {
-      await new Promise(r => setTimeout(r, delay));
+  await new Promise(r => setTimeout(r, 50));
+
+  const isEditable = element.isContentEditable;
+  const selection = window.getSelection();
+
+  // Posiciona cursor no final
+  if (isEditable && selection) {
+    if (!selection.rangeCount) {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
     }
-    
-    const beforeInput = new InputEvent('beforeinput', {
-      inputType: 'insertText',
+  } else if (element.setSelectionRange) {
+    const len = element.value?.length || 0;
+    element.setSelectionRange(len, len);
+  }
+
+  // Cria DataTransfer com o texto
+  const dataTransfer = new DataTransfer();
+  dataTransfer.setData('text/plain', text);
+  dataTransfer.setData('text/html', text.replace(/\n/g, '<br>'));
+
+  // Dispara evento de PASTE
+  const pasteEvent = new ClipboardEvent('paste', {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    clipboardData: dataTransfer
+  });
+
+  element.dispatchEvent(pasteEvent);
+
+  // Aguarda processamento
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => setTimeout(r, 100));
+  
+  console.log('✓ Texto colado instantaneamente');
+}
+
+// ===============================
+// Inserção segura de um caractere
+// ===============================
+function insertChar(element, char, attempt = 0) {
+  const MAX_ATTEMPTS = 3; // Limite de tentativas para evitar recursão infinita
+  const before = element.isContentEditable ? element.innerText : element.value;
+
+  const beforeInput = new InputEvent("beforeinput", {
+    inputType: "insertText",
+    data: char,
+    bubbles: true,
+    cancelable: true,
+  });
+  element.dispatchEvent(beforeInput);
+
+  if (beforeInput.defaultPrevented) return;
+
+  if (element.isContentEditable) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const node = document.createTextNode(char);
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } else if (element.tagName === "INPUT" || element.tagName === "TEXTAREA") {
+    const start = element.selectionStart || 0;
+    const end = element.selectionEnd || 0;
+    element.value =
+      element.value.substring(0, start) + char + element.value.substring(end);
+    element.selectionStart = element.selectionEnd = start + 1;
+  }
+
+  element.dispatchEvent(
+    new InputEvent("input", {
+      inputType: "insertText",
       data: char,
       bubbles: true,
-      cancelable: true
-    });
-    element.dispatchEvent(beforeInput);
-    
-    if (!beforeInput.defaultPrevented) {
-      if (element.isContentEditable) {
-        const sel = window.getSelection();
-        if (sel.rangeCount > 0) {
-          const range = sel.getRangeAt(0);
-          range.deleteContents(); // Limpar seleção se houver
-          const node = document.createTextNode(char);
-          range.insertNode(node);
-          range.setStartAfter(node);
-          range.setEndAfter(node);
-          range.collapse(false);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        }
-      } else if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
-        const start = element.selectionStart || 0;
-        const end = element.selectionEnd || 0;
-        const currentValue = element.value || '';
-        element.value = currentValue.substring(0, start) + char + currentValue.substring(end);
-        element.selectionStart = element.selectionEnd = start + 1;
-      }
-      
-      element.dispatchEvent(new InputEvent('input', {
-        inputType: 'insertText',
-        data: char,
-        bubbles: true
-      }));
-    }
+    })
+  );
+
+  // Garantia: reenvia se o texto não mudou (com limite de tentativas)
+  const after = element.isContentEditable ? element.innerText : element.value;
+  if (after === before && attempt < MAX_ATTEMPTS) {
+    console.warn(`Reenvio de caractere (tentativa ${attempt + 1}/${MAX_ATTEMPTS}):`, char);
+    element.focus();
+    insertChar(element, char, attempt + 1);
+  } else if (after === before && attempt >= MAX_ATTEMPTS) {
+    console.error("Falha ao inserir caractere após múltiplas tentativas:", char);
   }
 }
 
@@ -210,7 +334,7 @@ async function selectMacro(index) {
   if (currentInput && document.body.contains(currentInput)) {
     currentInput.focus();
     requestAnimationFrame(() => {
-      setTimeout(() => typeText(currentInput, text, 20), 50);
+      setTimeout(() => typeTextHuman(currentInput, text), 50);
     });
   }
 }

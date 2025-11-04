@@ -16,11 +16,18 @@
       <button id="addMacro">Adicionar</button>
     </div>
 
-    <div id="macroList" class="list"></div>
-
     <div class="help">
-      <strong>›</strong> Digite <code>&gt;</code> em qualquer campo
+      Digite <code>&gt;</code> em qualquer campo
     </div>
+
+    <div class="actions">
+      <button id="exportMacros" class="btn-secondary">Exportar JSON</button>
+      <button id="importMacros" class="btn-secondary">Importar JSON</button>
+      <button id="deleteAll" class="btn-danger">Excluir Todas</button>
+      <input type="file" id="fileInput" accept=".json" style="display:none">
+    </div>
+    <br>
+    <div id="macroList" class="list"></div>
   </div>
 
   <script src="popup.js"></script>

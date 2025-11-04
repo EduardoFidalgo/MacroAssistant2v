@@ -3,6 +3,10 @@ const commandInput = document.getElementById('command');
 const textInput = document.getElementById('text');
 const addButton = document.getElementById('addMacro');
 const macroList = document.getElementById('macroList');
+const exportButton = document.getElementById('exportMacros');
+const importButton = document.getElementById('importMacros');
+const deleteAllButton = document.getElementById('deleteAll');
+const fileInput = document.getElementById('fileInput');
 
 // === CARREGAR MACROS ===
 function loadMacros() {
@@ -69,8 +73,82 @@ function deleteMacro(cmd) {
   });
 }
 
+// === EXPORTAR MACROS ===
+function exportMacros() {
+  chrome.storage.sync.get(['macros'], (result) => {
+    const macros = result.macros || {};
+    
+    if (Object.keys(macros).length === 0) {
+      alert('Nenhuma macro para exportar!');
+      return;
+    }
+    
+    const dataStr = JSON.stringify(macros, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `macros_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+// === IMPORTAR MACROS ===
+function importMacros() {
+  fileInput.click();
+}
+
+function handleFileImport(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    try {
+      const importedMacros = JSON.parse(event.target.result);
+      
+      if (typeof importedMacros !== 'object' || Array.isArray(importedMacros)) {
+        alert('Arquivo JSON inválido!');
+        return;
+      }
+      
+      chrome.storage.sync.get(['macros'], (result) => {
+        const currentMacros = result.macros || {};
+        const merged = { ...currentMacros, ...importedMacros };
+        
+        chrome.storage.sync.set({ macros: merged }, () => {
+          loadMacros();
+          alert(`${Object.keys(importedMacros).length} macro(s) importada(s)!`);
+        });
+      });
+    } catch (err) {
+      alert('Erro ao ler arquivo JSON!');
+    }
+  };
+  reader.readAsText(file);
+  fileInput.value = '';
+}
+
+// === EXCLUIR TODAS ===
+function deleteAllMacros() {
+  if (!confirm('Tem certeza que deseja excluir TODAS as macros?\nEsta ação não pode ser desfeita!')) {
+    return;
+  }
+  
+  chrome.storage.sync.set({ macros: {} }, () => {
+    loadMacros();
+    alert('Todas as macros foram excluídas!');
+  });
+}
+
 // === EVENTOS ===
 addButton.addEventListener('click', addMacro);
+exportButton.addEventListener('click', exportMacros);
+importButton.addEventListener('click', importMacros);
+deleteAllButton.addEventListener('click', deleteAllMacros);
+fileInput.addEventListener('change', handleFileImport);
+
 commandInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') textInput.focus();
 });
