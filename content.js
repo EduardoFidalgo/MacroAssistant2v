@@ -5,29 +5,102 @@ let selectedIndex = 0;
 let filteredMacros = [];
 
 // === CRIAR PAINEL ===
+// === CRIAR PAINEL (compatível com BIRD) ===
 function createMacroPanel() {
   if (macroPanel && document.body.contains(macroPanel)) return macroPanel;
-  
-  const panel = document.createElement('div');
-  panel.id = 'macro-paste-panel';
+
+  // Cria container isolado
+  const container = document.createElement("div");
+  container.id = "macro-assistant-root";
+  container.style.position = "fixed";
+  container.style.zIndex = "9999999";
+  container.style.pointerEvents = "none"; // painel ainda recebe eventos internamente
+  document.body.appendChild(container);
+
+  // Cria Shadow DOM para evitar interferência do React/Slate
+  const shadow = container.attachShadow({ mode: "open" });
+
+  // Cria o painel dentro do shadow
+  const panel = document.createElement("div");
+  panel.id = "macro-paste-panel";
   panel.innerHTML = `
+    <style>
+      :host {
+        all: initial;
+        font-family: sans-serif;
+      }
+      #macro-paste-panel {
+        background: #1f1f1f;
+        color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 25px rgba(0,0,0,0.35);
+        width: 280px;
+        overflow: hidden;
+        pointer-events: all;
+      }
+      #macro-search {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 12px;
+        border: none;
+        outline: none;
+        font-size: 14px;
+        background: #2c2c2c;
+        color: #fff;
+      }
+      #macro-list {
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .macro-item {
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 13px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+      }
+      .macro-item.selected {
+        background: #0078ff;
+      }
+      .empty {
+        padding: 10px;
+        text-align: center;
+        color: #aaa;
+      }
+    </style>
     <input type="text" id="macro-search" placeholder="Buscar..." autocomplete="off">
     <div id="macro-list"></div>
   `;
-  
-  document.body.appendChild(panel);
+  shadow.appendChild(panel);
+
   macroPanel = panel;
-  
-  panel.querySelector('#macro-search').addEventListener('input', handleSearch);
-  panel.querySelector('#macro-search').addEventListener('keydown', handleKeydown);
-  
+
+  // Eventos dentro do shadow
+  const search = shadow.querySelector("#macro-search");
+  search.addEventListener("input", handleSearch);
+  search.addEventListener("keydown", handleKeydown);
+
+  // Capturar eventos dentro do shadow
+  shadow.addEventListener("keydown", e => e.stopImmediatePropagation(), { capture: true });
+  shadow.addEventListener("click", e => e.stopImmediatePropagation(), { capture: true });
+
   return panel;
 }
+
+// === LISTENER GLOBAL COM CAPTURE TRUE ===
+document.addEventListener("keydown", blockGreaterThan, { capture: true });
+document.addEventListener("keypress", blockGreaterThan, { capture: true });
 
 // === POSICIONAR PAINEL ===
 function positionPanel(element) {
   const rect = element.getBoundingClientRect();
-  const panelHeight = 350; // Altura aproximada do painel (300px lista + 50px busca)
+
+  if (macroPanel && macroPanel.getRootNode().host) {
+    const host = macroPanel.getRootNode().host;
+    host.style.top = rect.bottom + 5 + "px";
+    host.style.left = rect.left + "px";
+  }
+
+  const panelHeight = 350;
   const screenHeight = window.innerHeight;
   const screenMiddle = screenHeight / 2;
   
