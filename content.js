@@ -35,28 +35,9 @@ function createMacroPanel() {
   const searchInput = panel.querySelector('#macro-search');
   const macroList = panel.querySelector('#macro-list');
   
-  // Handlers normais
-  searchInput.addEventListener('input', handleSearch);
-  searchInput.addEventListener('keydown', handleKeydown);
-  
-  // BLOQUEIA propagação para FORA do painel (mas permite funcionamento interno)
-  const blockPropagation = (e) => {
-    // Apenas bloqueia a propagação, NÃO o comportamento padrão
-    e.stopPropagation();
-  };
-  
-  // Lista de eventos para bloquear propagação (em BUBBLE phase)
-  const eventsToBlock = [
-    'mousedown', 'mouseup', 'click', 'dblclick',
-    'keydown', 'keyup', 'keypress',
-    'touchstart', 'touchend', 'touchmove',
-    'pointerdown', 'pointerup', 'pointermove'
-  ];
-  
-  // Aplica em BUBBLE PHASE (false) para permitir handlers internos primeiro
-  eventsToBlock.forEach(eventType => {
-    panel.addEventListener(eventType, blockPropagation, false);
-  });
+  // Handlers normais primeiro - ANTES de qualquer bloqueio
+  searchInput.addEventListener('input', handleSearch, false);
+  searchInput.addEventListener('keydown', handleKeydown, false);
   
   return panel;
 }
@@ -166,14 +147,18 @@ function displayMacros() {
     item.className = 'macro-item' + (i === selectedIndex ? ' selected' : '');
     item.innerHTML = `<span class="cmd"><span class="icon">›</span>${cmd}</span><span class="txt">${txt.substring(0, 50)}</span>`;
     
-    // Handler de clique - permite ação mas bloqueia propagação
+    // Handler de clique
     item.addEventListener('click', (e) => {
-      e.stopPropagation(); // Bloqueia propagação mas permite a ação
+      console.log('🖱️ Clique no item:', i, cmd);
+      e.preventDefault();
+      e.stopPropagation();
       selectMacro(i);
     }, false);
     
-    // Também bloqueia mousedown para evitar fechar o Bird
+    // Bloqueia mousedown
     item.addEventListener('mousedown', (e) => {
+      console.log('🖱️ Mousedown no item:', i);
+      e.preventDefault();
       e.stopPropagation();
     }, false);
     
@@ -214,35 +199,42 @@ function handleSearch(e) {
 
 // === NAVEGAÇÃO COM TECLADO ===
 function handleKeydown(e) {
+  console.log('🔑 handleKeydown chamado! Tecla:', e.key, 'Target:', e.target.id);
+  
   // Lista de teclas que devemos tratar
   const handled = ['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(e.key);
   
-  if (handled) {
-    e.preventDefault(); // Impede comportamento padrão
-    e.stopPropagation(); // Impede propagação para fora
+  if (!handled) {
+    console.log('⚠️ Tecla não tratada:', e.key);
+    return;
   }
+  
+  console.log('✅ Tecla reconhecida:', e.key);
+  e.preventDefault(); // Impede comportamento padrão
+  e.stopPropagation(); // Impede propagação para fora
   
   switch(e.key) {
     case 'ArrowDown':
       selectedIndex = Math.min(selectedIndex + 1, filteredMacros.length - 1);
       updateSelection();
-      console.log('Arrow Down - selectedIndex:', selectedIndex);
+      console.log('⬇️ Arrow Down - selectedIndex:', selectedIndex);
       break;
     case 'ArrowUp':
       selectedIndex = Math.max(selectedIndex - 1, 0);
       updateSelection();
-      console.log('Arrow Up - selectedIndex:', selectedIndex);
+      console.log('⬆️ Arrow Up - selectedIndex:', selectedIndex);
       break;
     case 'Enter':
-      console.log('Enter pressed - selecting macro:', selectedIndex);
+      console.log('✨ Enter pressed - selecting macro:', selectedIndex);
       selectMacro(selectedIndex);
       break;
     case 'Escape':
+      console.log('🚪 Escape - fechando painel');
       hideMacroPanel();
       if (currentInput) currentInput.focus();
       break;
     case 'Tab':
-      // Impede tab sair do painel
+      console.log('⭾ Tab bloqueado');
       break;
   }
 }
@@ -446,16 +438,26 @@ function insertChar(element, char, attempt = 0) {
 
 // === SELECIONAR MACRO ===
 async function selectMacro(index) {
-  if (index < 0 || index >= filteredMacros.length) return;
+  console.log('🎯 selectMacro chamado! Index:', index, 'Total:', filteredMacros.length);
   
-  const text = filteredMacros[index][1];
+  if (index < 0 || index >= filteredMacros.length) {
+    console.log('❌ Índice inválido');
+    return;
+  }
+  
+  const [cmd, text] = filteredMacros[index];
+  console.log('📝 Selecionando macro:', cmd, 'Texto:', text.substring(0, 30) + '...');
+  
   hideMacroPanel();
   
   if (currentInput && document.body.contains(currentInput)) {
+    console.log('✅ Input válido, focando e inserindo texto...');
     currentInput.focus();
     requestAnimationFrame(() => {
       setTimeout(() => typeTextHuman(currentInput, text), 50);
     });
+  } else {
+    console.log('❌ Input inválido ou não existe mais no DOM');
   }
 }
 
@@ -498,17 +500,16 @@ document.addEventListener('keydown', (e) => {
   }
 }, true);
 
-// === BLOQUEIO ESPECÍFICO PARA BIRD (APENAS PROPAGAÇÃO) ===
-// Intercepta eventos do painel ANTES que o Bird os capture, mas permite funcionamento interno
+// === BLOQUEIO ESPECÍFICO PARA BIRD ===
+// Bloqueia eventos APENAS na BUBBLE PHASE (depois dos handlers internos)
 document.addEventListener('keydown', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
-    // Se o evento vem do painel ou seus filhos
     if (macroPanel.contains(e.target)) {
-      // Apenas bloqueia propagação, NÃO impede o handler interno
+      console.log('🛡️ Bloqueando propagação keydown para Bird:', e.key);
       e.stopPropagation();
     }
   }
-}, true); // CAPTURE PHASE
+}, false); // BUBBLE PHASE - executa DEPOIS dos handlers do painel
 
 document.addEventListener('keyup', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
@@ -516,20 +517,22 @@ document.addEventListener('keyup', (e) => {
       e.stopPropagation();
     }
   }
-}, true);
+}, false);
 
 document.addEventListener('click', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
     if (macroPanel.contains(e.target)) {
+      console.log('🛡️ Bloqueando propagação click para Bird');
       e.stopPropagation();
     }
   }
-}, true);
+}, false);
 
 document.addEventListener('mousedown', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
     if (macroPanel.contains(e.target)) {
+      console.log('🛡️ Bloqueando propagação mousedown para Bird');
       e.stopPropagation();
     }
   }
-}, true);
+}, false);
