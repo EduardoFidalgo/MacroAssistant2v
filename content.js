@@ -147,11 +147,12 @@ function displayMacros() {
     item.className = 'macro-item' + (i === selectedIndex ? ' selected' : '');
     item.innerHTML = `<span class="cmd"><span class="icon">›</span>${cmd}</span><span class="txt">${txt.substring(0, 50)}</span>`;
     
-    // Handler de clique
-    item.addEventListener('click', (e) => {
-      console.log('🖱️ Clique no item:', i, cmd);
+    // Handler de clique - usa mouseup ao invés de click para mais confiabilidade
+    item.addEventListener('mouseup', (e) => {
+      console.log('🖱️ Mouseup no item:', i, cmd);
       e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
       selectMacro(i);
     }, false);
     
@@ -160,6 +161,15 @@ function displayMacros() {
       console.log('🖱️ Mousedown no item:', i);
       e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
+    }, false);
+    
+    // Bloqueia click também
+    item.addEventListener('click', (e) => {
+      console.log('🖱️ Click no item:', i, cmd);
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
     }, false);
     
     // Hover atualiza seleção
@@ -199,7 +209,7 @@ function handleSearch(e) {
 
 // === NAVEGAÇÃO COM TECLADO ===
 function handleKeydown(e) {
-  console.log('🔑 handleKeydown chamado! Tecla:', e.key, 'Target:', e.target.id);
+  console.log('🔑 handleKeydown chamado! Tecla:', e.key, 'Target:', e.target.id || e.target.tagName);
   
   // Lista de teclas que devemos tratar
   const handled = ['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(e.key);
@@ -217,21 +227,30 @@ function handleKeydown(e) {
     case 'ArrowDown':
       selectedIndex = Math.min(selectedIndex + 1, filteredMacros.length - 1);
       updateSelection();
-      console.log('⬇️ Arrow Down - selectedIndex:', selectedIndex);
+      console.log('⬇️ Arrow Down - selectedIndex:', selectedIndex, '/', filteredMacros.length);
       break;
     case 'ArrowUp':
       selectedIndex = Math.max(selectedIndex - 1, 0);
       updateSelection();
-      console.log('⬆️ Arrow Up - selectedIndex:', selectedIndex);
+      console.log('⬆️ Arrow Up - selectedIndex:', selectedIndex, '/', filteredMacros.length);
       break;
     case 'Enter':
       console.log('✨ Enter pressed - selecting macro:', selectedIndex);
+      e.stopImmediatePropagation(); // Garante que nada mais capture este Enter
       selectMacro(selectedIndex);
       break;
     case 'Escape':
       console.log('🚪 Escape - fechando painel');
       hideMacroPanel();
-      if (currentInput) currentInput.focus();
+      // Restaura foco no input original ou busca um válido
+      if (currentInput && document.body.contains(currentInput)) {
+        currentInput.focus();
+      } else {
+        const input = document.querySelector('[contenteditable="true"]') || 
+                     document.querySelector('textarea') ||
+                     document.querySelector('input[type="text"]');
+        if (input) input.focus();
+      }
       break;
     case 'Tab':
       console.log('⭾ Tab bloqueado');
@@ -448,16 +467,41 @@ async function selectMacro(index) {
   const [cmd, text] = filteredMacros[index];
   console.log('📝 Selecionando macro:', cmd, 'Texto:', text.substring(0, 30) + '...');
   
+  // Tenta usar currentInput, se não existir, busca o elemento focado ou contenteditable ativo
+  let targetInput = currentInput;
+  
+  if (!targetInput || !document.body.contains(targetInput)) {
+    console.log('⚠️ currentInput inválido, buscando input ativo...');
+    
+    // Tenta pegar o elemento focado
+    targetInput = document.activeElement;
+    console.log('🔍 activeElement:', targetInput?.tagName, targetInput?.id, targetInput?.className);
+    
+    // Se o activeElement não é um input válido, procura por contenteditable
+    if (targetInput && !targetInput.isContentEditable && 
+        targetInput.tagName !== 'INPUT' && 
+        targetInput.tagName !== 'TEXTAREA') {
+      console.log('🔍 Procurando contenteditable no Bird...');
+      targetInput = document.querySelector('[contenteditable="true"]') || 
+                   document.querySelector('textarea') ||
+                   document.querySelector('input[type="text"]');
+      console.log('🔍 Encontrado:', targetInput?.tagName, targetInput?.className);
+    }
+  }
+  
   hideMacroPanel();
   
-  if (currentInput && document.body.contains(currentInput)) {
-    console.log('✅ Input válido, focando e inserindo texto...');
-    currentInput.focus();
-    requestAnimationFrame(() => {
-      setTimeout(() => typeTextHuman(currentInput, text), 50);
-    });
+  if (targetInput && document.body.contains(targetInput)) {
+    console.log('✅ Input válido encontrado! Focando e inserindo texto...');
+    targetInput.focus();
+    
+    // Aguarda um momento para garantir que o foco foi estabelecido
+    await new Promise(r => setTimeout(r, 100));
+    
+    await typeTextHuman(targetInput, text);
+    console.log('✅ Texto inserido com sucesso!');
   } else {
-    console.log('❌ Input inválido ou não existe mais no DOM');
+    console.log('❌ Nenhum input válido encontrado');
   }
 }
 
@@ -501,15 +545,15 @@ document.addEventListener('keydown', (e) => {
 }, true);
 
 // === BLOQUEIO ESPECÍFICO PARA BIRD ===
-// Bloqueia eventos APENAS na BUBBLE PHASE (depois dos handlers internos)
+// Bloqueia eventos em CAPTURE PHASE para garantir prioridade máxima
 document.addEventListener('keydown', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
     if (macroPanel.contains(e.target)) {
-      console.log('🛡️ Bloqueando propagação keydown para Bird:', e.key);
+      console.log('🛡️ [CAPTURE] Bloqueando keydown para Bird:', e.key);
       e.stopPropagation();
     }
   }
-}, false); // BUBBLE PHASE - executa DEPOIS dos handlers do painel
+}, true); // CAPTURE PHASE
 
 document.addEventListener('keyup', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
@@ -517,22 +561,27 @@ document.addEventListener('keyup', (e) => {
       e.stopPropagation();
     }
   }
-}, false);
+}, true);
 
+// Para cliques, também bloqueia em CAPTURE para evitar que o Bird feche
 document.addEventListener('click', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
     if (macroPanel.contains(e.target)) {
-      console.log('🛡️ Bloqueando propagação click para Bird');
+      console.log('🛡️ [CAPTURE] Bloqueando click para Bird');
+      e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
     }
   }
-}, false);
+}, true);
 
 document.addEventListener('mousedown', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
     if (macroPanel.contains(e.target)) {
-      console.log('🛡️ Bloqueando propagação mousedown para Bird');
+      console.log('🛡️ [CAPTURE] Bloqueando mousedown para Bird');
+      e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
     }
   }
-}, false);
+}, true);
