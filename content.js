@@ -39,16 +39,26 @@ function createMacroPanel() {
   searchInput.addEventListener('input', handleSearch);
   searchInput.addEventListener('keydown', handleKeydown);
   
-  // APENAS impede que eventos vazem para FORA do painel (não bloqueia internamente)
-  const stopPropagation = (e) => {
+  // BLOQUEIA TODOS OS EVENTOS em CAPTURE PHASE (antes do Bird)
+  const blockEvent = (e) => {
     e.stopPropagation();
+    e.stopImmediatePropagation();
   };
   
-  // Aplica apenas no painel (não em capture), para eventos vazarem para fora
-  panel.addEventListener('mousedown', stopPropagation, false);
-  panel.addEventListener('click', stopPropagation, false);
-  panel.addEventListener('keydown', stopPropagation, false);
-  panel.addEventListener('keyup', stopPropagation, false);
+  // Lista completa de eventos para bloquear em CAPTURE
+  const eventsToBlock = [
+    'mousedown', 'mouseup', 'click', 'dblclick',
+    'keydown', 'keyup', 'keypress',
+    'touchstart', 'touchend', 'touchmove',
+    'pointerdown', 'pointerup', 'pointermove',
+    'focus', 'blur', 'focusin', 'focusout',
+    'input', 'change', 'submit'
+  ];
+  
+  // Aplica em CAPTURE PHASE (true) para interceptar ANTES do Bird
+  eventsToBlock.forEach(eventType => {
+    panel.addEventListener(eventType, blockEvent, true);
+  });
   
   return panel;
 }
@@ -158,11 +168,20 @@ function displayMacros() {
     item.className = 'macro-item' + (i === selectedIndex ? ' selected' : '');
     item.innerHTML = `<span class="cmd"><span class="icon">›</span>${cmd}</span><span class="txt">${txt.substring(0, 50)}</span>`;
     
-    // Handler de clique simples
+    // Handler de clique com BLOQUEIO TOTAL
     item.addEventListener('click', (e) => {
-      e.stopPropagation(); // Impede vazar para fora do painel
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
       selectMacro(i);
-    });
+    }, true); // CAPTURE PHASE
+    
+    // Também bloqueia mousedown para evitar fechar o Bird
+    item.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }, true);
     
     // Hover atualiza seleção
     item.addEventListener('mouseenter', () => {
@@ -201,12 +220,13 @@ function handleSearch(e) {
 
 // === NAVEGAÇÃO COM TECLADO ===
 function handleKeydown(e) {
-  // Apenas para teclas específicas, impede propagação
-  const handled = ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key);
+  // Bloqueia COMPLETAMENTE a propagação de eventos de navegação
+  const handled = ['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(e.key);
   
   if (handled) {
     e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
   }
   
   switch(e.key) {
@@ -224,6 +244,9 @@ function handleKeydown(e) {
     case 'Escape':
       hideMacroPanel();
       if (currentInput) currentInput.focus();
+      break;
+    case 'Tab':
+      // Impede tab sair do painel
       break;
   }
 }
@@ -458,21 +481,63 @@ function blockGreaterThan(e) {
 document.addEventListener('keydown', blockGreaterThan, true);
 document.addEventListener('keypress', blockGreaterThan, true);
 
-// Listener de cliques - fecha painel ao clicar fora
+// Listener de cliques - fecha painel ao clicar fora (mas NÃO bloqueia o clique)
 document.addEventListener('mousedown', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
     if (!macroPanel.contains(e.target)) {
       hideMacroPanel();
     }
   }
-}, true);
+  // NÃO bloqueia propagação aqui - só fecha o painel
+}, false); // BUBBLE PHASE para não interferir com outros handlers
 
 // Listener de ESC global
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && macroPanel && macroPanel.style.display !== 'none') {
     e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
     hideMacroPanel();
     if (currentInput) currentInput.focus();
+  }
+}, true);
+
+// === BLOQUEIO ESPECÍFICO PARA BIRD ===
+// Intercepta TODOS os eventos do painel ANTES que o Bird os capture
+document.addEventListener('keydown', (e) => {
+  if (macroPanel && macroPanel.style.display !== 'none') {
+    // Se o foco está no painel ou em seus filhos
+    if (macroPanel.contains(document.activeElement) || macroPanel.contains(e.target)) {
+      // Bloqueia propagação para evitar que o Bird capture
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
+  }
+}, true); // CAPTURE PHASE - mais prioritário que qualquer listener do Bird
+
+document.addEventListener('keyup', (e) => {
+  if (macroPanel && macroPanel.style.display !== 'none') {
+    if (macroPanel.contains(document.activeElement) || macroPanel.contains(e.target)) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
+  }
+}, true);
+
+document.addEventListener('click', (e) => {
+  if (macroPanel && macroPanel.style.display !== 'none') {
+    if (macroPanel.contains(e.target)) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
+  }
+}, true);
+
+document.addEventListener('mousedown', (e) => {
+  if (macroPanel && macroPanel.style.display !== 'none') {
+    if (macroPanel.contains(e.target)) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
   }
 }, true);
