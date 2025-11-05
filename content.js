@@ -14,9 +14,15 @@ function createMacroPanel() {
   // Atributos para garantir que fique acima de modais
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-modal', 'false');
-  panel.style.zIndex = '2147483647';
-  panel.style.position = 'fixed';
-  panel.style.pointerEvents = 'auto';
+  
+  // Força estilos inline com !important via cssText
+  panel.style.cssText = `
+    position: fixed !important;
+    z-index: 2147483647 !important;
+    pointer-events: auto !important;
+    isolation: isolate !important;
+    transform: translateZ(0) !important;
+  `;
   
   panel.innerHTML = `
     <input type="text" id="macro-search" placeholder="Buscar..." autocomplete="off">
@@ -100,12 +106,23 @@ function showMacroPanel(element) {
     }
     document.body.appendChild(panel);
     
-    // Força z-index e pointer-events inline (mais forte que CSS)
+    // Força TODOS os estilos críticos inline com !important (mais forte que CSS)
     panel.style.cssText = `
       display: block !important;
       position: fixed !important;
       z-index: 2147483647 !important;
       pointer-events: auto !important;
+      isolation: isolate !important;
+      transform: translateZ(0) !important;
+      will-change: transform !important;
+      width: 420px !important;
+      background: #ffffff !important;
+      border: 1px solid #e5e5e5 !important;
+      border-radius: 12px !important;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+      overflow: hidden !important;
+      backdrop-filter: blur(10px) !important;
     `;
     
     positionPanel(element);

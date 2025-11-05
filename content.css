@@ -1,7 +1,7 @@
 /* === PAINEL === */
 #macro-paste-panel {
-  position: fixed;
-  z-index: 2147483647;
+  position: fixed !important;
+  z-index: 2147483647 !important;
   display: none;
   width: 420px;
   background: #ffffff;
@@ -11,6 +11,10 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   overflow: hidden;
   backdrop-filter: blur(10px);
+  pointer-events: auto !important;
+  isolation: isolate;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* === BUSCA === */
