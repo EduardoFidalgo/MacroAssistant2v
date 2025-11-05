@@ -39,6 +39,15 @@ function createMacroPanel() {
   searchInput.addEventListener('input', handleSearch, false);
   searchInput.addEventListener('keydown', handleKeydown, false);
   
+  // Log quando o input recebe foco
+  searchInput.addEventListener('focus', () => {
+    console.log('✅ Campo de busca FOCADO!');
+  });
+  
+  searchInput.addEventListener('blur', () => {
+    console.log('⚠️ Campo de busca PERDEU FOCO!');
+  });
+  
   return panel;
 }
 
@@ -77,12 +86,17 @@ function positionPanel(element) {
 
 // === MOSTRAR PAINEL ===
 function showMacroPanel(element) {
+  console.log('📂 showMacroPanel chamado! Element:', element?.tagName, element?.className);
   currentInput = element;
   
   chrome.storage.sync.get(['macros'], (result) => {
     const macros = result.macros || {};
-    if (Object.keys(macros).length === 0) return;
+    if (Object.keys(macros).length === 0) {
+      console.log('⚠️ Nenhuma macro encontrada no storage');
+      return;
+    }
     
+    console.log('✅ Macros carregadas:', Object.keys(macros).length);
     filteredMacros = Object.entries(macros);
     selectedIndex = 0;
     
@@ -120,8 +134,10 @@ function showMacroPanel(element) {
     setTimeout(() => {
       const searchInput = panel.querySelector('#macro-search');
       if (searchInput) {
+        console.log('🎯 Focando no campo de busca...');
         searchInput.focus();
-        searchInput.click(); // Garante ativação
+        searchInput.click();
+        console.log('✅ Campo de busca focado! activeElement:', document.activeElement?.id);
       }
     }, 50);
   });
@@ -196,6 +212,7 @@ function updateSelection() {
 // === BUSCAR MACROS ===
 function handleSearch(e) {
   const query = e.target.value.toLowerCase();
+  console.log('🔍 Busca:', query);
   
   chrome.storage.sync.get(['macros'], (result) => {
     const macros = result.macros || {};
@@ -203,6 +220,7 @@ function handleSearch(e) {
       cmd.toLowerCase().includes(query) || txt.toLowerCase().includes(query)
     );
     selectedIndex = 0;
+    console.log('📊 Resultados filtrados:', filteredMacros.length);
     displayMacros();
   });
 }
@@ -482,10 +500,16 @@ async function selectMacro(index) {
         targetInput.tagName !== 'INPUT' && 
         targetInput.tagName !== 'TEXTAREA') {
       console.log('🔍 Procurando contenteditable no Bird...');
-      targetInput = document.querySelector('[contenteditable="true"]') || 
-                   document.querySelector('textarea') ||
-                   document.querySelector('input[type="text"]');
-      console.log('🔍 Encontrado:', targetInput?.tagName, targetInput?.className);
+      
+      // Busca especificamente elementos do Bird (exclui recaptcha e outros)
+      const possibleInputs = [
+        document.querySelector('[contenteditable="true"]:not([style*="display: none"]):not([aria-hidden="true"])'),
+        document.querySelector('textarea:not(.g-recaptcha-response):not([style*="display: none"])'),
+        document.querySelector('input[type="text"]:not([style*="display: none"])')
+      ];
+      
+      targetInput = possibleInputs.find(el => el && el.offsetParent !== null) || possibleInputs[0];
+      console.log('🔍 Encontrado:', targetInput?.tagName, targetInput?.className, 'Visível:', targetInput?.offsetParent !== null);
     }
   }
   
@@ -527,6 +551,7 @@ document.addEventListener('keypress', blockGreaterThan, true);
 document.addEventListener('mousedown', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
     if (!macroPanel.contains(e.target)) {
+      console.log('👆 Clique fora do painel - fechando');
       hideMacroPanel();
     }
   }
