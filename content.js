@@ -130,14 +130,23 @@ function showMacroPanel(element) {
     
     positionPanel(element);
     
-    // Foca com delay maior para garantir renderização
+    // Foca com delay e força o foco múltiplas vezes
     setTimeout(() => {
       const searchInput = panel.querySelector('#macro-search');
       if (searchInput) {
         console.log('🎯 Focando no campo de busca...');
         searchInput.focus();
-        searchInput.click();
-        console.log('✅ Campo de busca focado! activeElement:', document.activeElement?.id);
+        
+        // Força foco novamente após um momento
+        setTimeout(() => {
+          searchInput.focus();
+          console.log('✅ Campo de busca focado! activeElement:', document.activeElement?.id);
+        }, 10);
+        
+        // E mais uma vez para garantir
+        setTimeout(() => {
+          searchInput.focus();
+        }, 50);
       }
     }, 50);
   });
@@ -163,30 +172,31 @@ function displayMacros() {
     item.className = 'macro-item' + (i === selectedIndex ? ' selected' : '');
     item.innerHTML = `<span class="cmd"><span class="icon">›</span>${cmd}</span><span class="txt">${txt.substring(0, 50)}</span>`;
     
-    // Handler de clique - usa mouseup ao invés de click para mais confiabilidade
-    item.addEventListener('mouseup', (e) => {
-      console.log('🖱️ Mouseup no item:', i, cmd);
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      selectMacro(i);
-    }, false);
-    
-    // Bloqueia mousedown
+    // Handler de clique - captura ANTES de qualquer bloqueio
     item.addEventListener('mousedown', (e) => {
-      console.log('🖱️ Mousedown no item:', i);
+      console.log('🖱️ Mousedown no item:', i, cmd);
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-    }, false);
+      
+      // Seleciona IMEDIATAMENTE no mousedown
+      selectMacro(i);
+    }, true); // CAPTURE PHASE para executar antes de tudo
     
-    // Bloqueia click também
+    // Bloqueia click e mouseup para não vazar
     item.addEventListener('click', (e) => {
-      console.log('🖱️ Click no item:', i, cmd);
+      console.log('🖱️ Click no item (bloqueado):', i);
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-    }, false);
+    }, true);
+    
+    item.addEventListener('mouseup', (e) => {
+      console.log('🖱️ Mouseup no item (bloqueado):', i);
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }, true);
     
     // Hover atualiza seleção
     item.addEventListener('mouseenter', () => {
@@ -485,47 +495,47 @@ async function selectMacro(index) {
   const [cmd, text] = filteredMacros[index];
   console.log('📝 Selecionando macro:', cmd, 'Texto:', text.substring(0, 30) + '...');
   
-  // Tenta usar currentInput, se não existir, busca o elemento focado ou contenteditable ativo
+  // SEMPRE usa currentInput guardado (nunca busca dinamicamente)
   let targetInput = currentInput;
   
   if (!targetInput || !document.body.contains(targetInput)) {
-    console.log('⚠️ currentInput inválido, buscando input ativo...');
+    console.log('❌ ERRO: currentInput foi perdido! Element:', currentInput?.tagName);
+    console.log('🔍 Tentando recuperar o input original...');
     
-    // Tenta pegar o elemento focado
-    targetInput = document.activeElement;
-    console.log('🔍 activeElement:', targetInput?.tagName, targetInput?.id, targetInput?.className);
+    // Busca pelo DIV do Bird com classe slate-editor (visto nos logs)
+    const possibleInputs = [
+      document.querySelector('.slate-editor[contenteditable="true"]'),
+      document.querySelector('[contenteditable="true"].slate-editor'),
+      document.querySelector('[contenteditable="true"]'),
+      document.querySelector('div[role="textbox"]')
+    ];
     
-    // Se o activeElement não é um input válido, procura por contenteditable
-    if (targetInput && !targetInput.isContentEditable && 
-        targetInput.tagName !== 'INPUT' && 
-        targetInput.tagName !== 'TEXTAREA') {
-      console.log('🔍 Procurando contenteditable no Bird...');
-      
-      // Busca especificamente elementos do Bird (exclui recaptcha e outros)
-      const possibleInputs = [
-        document.querySelector('[contenteditable="true"]:not([style*="display: none"]):not([aria-hidden="true"])'),
-        document.querySelector('textarea:not(.g-recaptcha-response):not([style*="display: none"])'),
-        document.querySelector('input[type="text"]:not([style*="display: none"])')
-      ];
-      
-      targetInput = possibleInputs.find(el => el && el.offsetParent !== null) || possibleInputs[0];
-      console.log('🔍 Encontrado:', targetInput?.tagName, targetInput?.className, 'Visível:', targetInput?.offsetParent !== null);
-    }
+    targetInput = possibleInputs.find(el => el !== null);
+    console.log('🔍 Input recuperado:', targetInput?.tagName, targetInput?.classList?.value);
+  } else {
+    console.log('✅ Usando currentInput original:', targetInput?.tagName, targetInput?.classList?.value);
   }
-  
-  hideMacroPanel();
   
   if (targetInput && document.body.contains(targetInput)) {
     console.log('✅ Input válido encontrado! Focando e inserindo texto...');
-    targetInput.focus();
     
-    // Aguarda um momento para garantir que o foco foi estabelecido
+    // Fecha o painel DEPOIS de ter certeza que temos o input
+    hideMacroPanel();
+    
+    // Aguarda um pouco mais antes de focar
+    await new Promise(r => setTimeout(r, 150));
+    
+    targetInput.focus();
+    console.log('🎯 Foco estabelecido em:', document.activeElement?.tagName);
+    
+    // Aguarda mais um momento
     await new Promise(r => setTimeout(r, 100));
     
     await typeTextHuman(targetInput, text);
     console.log('✅ Texto inserido com sucesso!');
   } else {
     console.log('❌ Nenhum input válido encontrado');
+    hideMacroPanel();
   }
 }
 
@@ -569,44 +579,28 @@ document.addEventListener('keydown', (e) => {
   }
 }, true);
 
-// === BLOQUEIO ESPECÍFICO PARA BIRD ===
-// Bloqueia eventos em CAPTURE PHASE para garantir prioridade máxima
-document.addEventListener('keydown', (e) => {
+// === BLOQUEIO ULTRA-AGRESSIVO PARA BIRD ===
+// Bloqueia TUDO que vem do painel em CAPTURE PHASE
+const blockAllBirdEvents = (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
     if (macroPanel.contains(e.target)) {
-      console.log('🛡️ [CAPTURE] Bloqueando keydown para Bird:', e.key);
-      e.stopPropagation();
-    }
-  }
-}, true); // CAPTURE PHASE
-
-document.addEventListener('keyup', (e) => {
-  if (macroPanel && macroPanel.style.display !== 'none') {
-    if (macroPanel.contains(e.target)) {
-      e.stopPropagation();
-    }
-  }
-}, true);
-
-// Para cliques, também bloqueia em CAPTURE para evitar que o Bird feche
-document.addEventListener('click', (e) => {
-  if (macroPanel && macroPanel.style.display !== 'none') {
-    if (macroPanel.contains(e.target)) {
-      console.log('🛡️ [CAPTURE] Bloqueando click para Bird');
-      e.preventDefault();
+      console.log('🛡️ [CAPTURE] Bloqueando', e.type, 'para Bird');
       e.stopPropagation();
       e.stopImmediatePropagation();
     }
   }
-}, true);
+};
 
-document.addEventListener('mousedown', (e) => {
-  if (macroPanel && macroPanel.style.display !== 'none') {
-    if (macroPanel.contains(e.target)) {
-      console.log('🛡️ [CAPTURE] Bloqueando mousedown para Bird');
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    }
-  }
-}, true);
+// Lista COMPLETA de eventos para bloquear
+const allEvents = [
+  'click', 'mousedown', 'mouseup', 'mousemove', 'mouseover', 'mouseout',
+  'keydown', 'keyup', 'keypress',
+  'touchstart', 'touchend', 'touchmove',
+  'pointerdown', 'pointerup', 'pointermove',
+  'focusin', 'focusout', 'focus', 'blur'
+];
+
+// Aplica bloqueio em CAPTURE para TODOS os eventos
+allEvents.forEach(eventType => {
+  document.addEventListener(eventType, blockAllBirdEvents, true);
+});
