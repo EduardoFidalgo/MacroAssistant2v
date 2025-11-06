@@ -583,17 +583,6 @@ document.addEventListener('keydown', (e) => {
   }
 }, true);
 
-// === BLOQUEIO INTELIGENTE PARA BIRD ===
-// Bloqueia propagação APENAS no nível do painel (não nos filhos)
-document.addEventListener('click', (e) => {
-  if (macroPanel && macroPanel.style.display !== 'none') {
-    if (macroPanel.contains(e.target)) {
-      console.log('🛡️ Bloqueando click para Bird');
-      // Apenas stopPropagation no final da cadeia (bubble)
-    }
-  }
-}, false); // BUBBLE PHASE - depois de processar internamente
-
 document.addEventListener('mousedown', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
     if (macroPanel.contains(e.target)) {
