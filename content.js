@@ -3,12 +3,14 @@ let currentInput = null;
 let macroPanel = null;
 let selectedIndex = 0;
 let filteredMacros = [];
+let birdOverlayDisabler = null;
+let chatReactivator = null;
 
 // === CRIAR PAINEL COM SHADOW DOM ===
 function createMacroPanel() {
   if (macroPanel && document.body.contains(macroPanel)) return macroPanel;
 
-  // Cria container host isolado
+  // Cria container host isolado com pointer-events: auto
   const host = document.createElement('div');
   host.id = 'macro-paste-host';
   host.style.cssText = `
@@ -17,8 +19,11 @@ function createMacroPanel() {
     pointer-events: auto !important;
     isolation: isolate !important;
     transform: translateZ(0) !important;
+    will-change: transform !important;
   `;
   document.body.appendChild(host);
+  
+  console.log('✅ Host criado com pointer-events: auto');
 
   // 🔥 Cria Shadow Root para isolar eventos e CSS completamente
   const shadow = host.attachShadow({ mode: 'open' });
@@ -61,28 +66,74 @@ function createMacroPanel() {
     console.log('⚠️ Campo de busca PERDEU FOCO!');
   });
   
-  // 🔥 Impede que eventos vazem do Shadow DOM para o Bird
+  // 🔥 PASSO 1: Impede que eventos vazem do Shadow DOM para o Bird
   // Shadow DOM já isola, mas garantimos bloqueio adicional no host
   host.addEventListener('click', (e) => {
     console.log('🛡️ Host bloqueando click');
     e.stopPropagation();
-  }, false);
+    e.stopImmediatePropagation();
+  }, true); // CAPTURE PHASE
   
   host.addEventListener('mousedown', (e) => {
     console.log('🛡️ Host bloqueando mousedown');
     e.stopPropagation();
-  }, false);
+    e.stopImmediatePropagation();
+  }, true);
+  
+  host.addEventListener('mouseup', (e) => {
+    console.log('🛡️ Host bloqueando mouseup');
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+  }, true);
   
   host.addEventListener('keydown', (e) => {
     console.log('🛡️ Host bloqueando keydown:', e.key);
     e.stopPropagation();
-  }, false);
+    e.stopImmediatePropagation();
+  }, true);
   
   host.addEventListener('keyup', (e) => {
     e.stopPropagation();
-  }, false);
+    e.stopImmediatePropagation();
+  }, true);
   
   return host;
+}
+
+// === PASSO 2: DESATIVA OVERLAY DO BIRD ===
+function disableBirdOverlay() {
+  // Desativa todas as camadas de overlay do Bird/Intercom
+  document.querySelectorAll(`
+    [class*="intercom"],
+    iframe[src*="intercom"],
+    div[id*="bird"],
+    iframe[id*="bird"],
+    [class*="bird"],
+    div[class*="backdrop"],
+    div[class*="overlay"]
+  `).forEach(el => {
+    if (el !== macroPanel && !macroPanel?.contains(el)) {
+      el.style.pointerEvents = "none";
+      console.log('🚫 Desativado overlay:', el.tagName, el.className || el.id);
+    }
+  });
+}
+
+// === PASSO 3: REATIVA APENAS A ÁREA DO CHAT ===
+function reactivateChatArea() {
+  // Reativa apenas o iframe do chat, não o overlay
+  const chatIframes = [
+    document.querySelector("iframe[src*='intercom']"),
+    document.querySelector("iframe[id*='bird']"),
+    document.querySelector("iframe[name*='intercom']")
+  ].filter(Boolean);
+
+  chatIframes.forEach(chat => {
+    if (chat && chat.style.pointerEvents === "none") {
+      chat.style.pointerEvents = "auto";
+      console.log('✅ Chat reativado:', chat.src || chat.id);
+    }
+  });
 }
 
 // === POSICIONAR PAINEL ===
@@ -137,6 +188,18 @@ function showMacroPanel(element) {
     const panel = createMacroPanel();
     displayMacros();
     
+    // 🔥 INICIA os intervals para desativar overlay do Bird
+    if (!birdOverlayDisabler) {
+      console.log('🔥 Iniciando proteção contra overlay do Bird...');
+      disableBirdOverlay(); // Executa imediatamente
+      birdOverlayDisabler = setInterval(disableBirdOverlay, 500);
+    }
+    
+    if (!chatReactivator) {
+      reactivateChatArea(); // Executa imediatamente
+      chatReactivator = setInterval(reactivateChatArea, 500);
+    }
+    
     // Remove e adiciona novamente para garantir que fique por cima
     if (panel.parentElement) {
       panel.parentElement.removeChild(panel);
@@ -175,6 +238,29 @@ function hideMacroPanel() {
   if (macroPanel) {
     macroPanel.panel.style.display = 'none';
   }
+  
+  // Para os intervals quando o painel fecha
+  if (birdOverlayDisabler) {
+    console.log('🛑 Parando proteção contra overlay do Bird');
+    clearInterval(birdOverlayDisabler);
+    birdOverlayDisabler = null;
+  }
+  
+  if (chatReactivator) {
+    clearInterval(chatReactivator);
+    chatReactivator = null;
+  }
+  
+  // Reativa todos os overlays do Bird quando fecha o menu
+  document.querySelectorAll(`
+    [class*="intercom"],
+    iframe[src*="intercom"],
+    div[id*="bird"],
+    iframe[id*="bird"],
+    [class*="bird"]
+  `).forEach(el => {
+    el.style.pointerEvents = "";
+  });
 }
 
 // === EXIBIR MACROS ===
