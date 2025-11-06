@@ -115,6 +115,8 @@ h1 {
 
 .macro-info {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .macro-cmd {
@@ -122,6 +124,9 @@ h1 {
   font-size: 13px;
   color: #333;
   margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .macro-icon {
@@ -135,6 +140,7 @@ h1 {
   border-radius: 3px;
   font-size: 11px;
   margin-right: 6px;
+  flex-shrink: 0;
 }
 
 .macro-txt {
@@ -143,6 +149,7 @@ h1 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .delete {
