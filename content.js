@@ -12,14 +12,15 @@ function hardBlockEventsForPanel(host) {
   
   events.forEach(ev => {
     host.addEventListener(ev, (e) => {
-      e.preventDefault();
+      // Só bloqueia se o evento já terminou de processar internamente (BUBBLE PHASE)
+      // NÃO bloqueia em capture, deixa o evento processar normalmente primeiro
       e.stopPropagation();
       e.stopImmediatePropagation();
-      console.log("🛡️ Hard-block", ev, "origin:", e.target.id || e.target.tagName);
-    }, true); // ⚠️ CAPTURE mode é o segredo - intercepta ANTES de tudo
+      console.log("🛡️ Hard-block (bubble)", ev, "origin:", e.target.id || e.target.tagName);
+    }, false); // ⚠️ BUBBLE mode - deixa eventos funcionarem DENTRO do Shadow DOM primeiro
   });
   
-  console.log('🔥 Hard-block ativado para', events.length, 'eventos em CAPTURE mode');
+  console.log('🔥 Hard-block ativado para', events.length, 'eventos em BUBBLE mode');
 }
 
 // === CRIAR PAINEL COM SHADOW DOM ===
@@ -85,16 +86,17 @@ function createMacroPanel() {
     console.log('⚠️ Campo de busca PERDEU FOCO!');
   });
   
-  // Teclado também precisa ser bloqueado para não vazar
+  // Teclado em BUBBLE phase - deixa Shadow DOM processar primeiro
   host.addEventListener('keydown', (e) => {
     e.stopPropagation();
     e.stopImmediatePropagation();
-  }, true);
+    console.log('🛡️ Teclado bloqueado (bubble):', e.key);
+  }, false);
   
   host.addEventListener('keyup', (e) => {
     e.stopPropagation();
     e.stopImmediatePropagation();
-  }, true);
+  }, false);
   
   return host;
 }
