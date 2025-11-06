@@ -6,6 +6,22 @@ let filteredMacros = [];
 let birdOverlayDisabler = null;
 let chatReactivator = null;
 
+// === HARD BLOCK: IMPEDE EVENTOS DE CHEGAREM AO DOCUMENT ===
+function hardBlockEventsForPanel(host) {
+  const events = ["click", "mousedown", "mouseup", "touchstart", "touchend", "pointerdown", "pointerup"];
+  
+  events.forEach(ev => {
+    host.addEventListener(ev, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      console.log("🛡️ Hard-block", ev, "origin:", e.target.id || e.target.tagName);
+    }, true); // ⚠️ CAPTURE mode é o segredo - intercepta ANTES de tudo
+  });
+  
+  console.log('🔥 Hard-block ativado para', events.length, 'eventos em CAPTURE mode');
+}
+
 // === CRIAR PAINEL COM SHADOW DOM ===
 function createMacroPanel() {
   if (macroPanel && document.body.contains(macroPanel)) return macroPanel;
@@ -22,6 +38,9 @@ function createMacroPanel() {
     will-change: transform !important;
   `;
   document.body.appendChild(host);
+  
+  // 🔥 ATIVA HARD-BLOCK: Impede que eventos cheguem aos listeners globais do Bird
+  hardBlockEventsForPanel(host);
   
   console.log('✅ Host criado com pointer-events: auto');
 
@@ -66,28 +85,8 @@ function createMacroPanel() {
     console.log('⚠️ Campo de busca PERDEU FOCO!');
   });
   
-  // 🔥 PASSO 1: Impede que eventos vazem do Shadow DOM para o Bird
-  // Shadow DOM já isola, mas garantimos bloqueio adicional no host
-  host.addEventListener('click', (e) => {
-    console.log('🛡️ Host bloqueando click');
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-  }, true); // CAPTURE PHASE
-  
-  host.addEventListener('mousedown', (e) => {
-    console.log('🛡️ Host bloqueando mousedown');
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-  }, true);
-  
-  host.addEventListener('mouseup', (e) => {
-    console.log('🛡️ Host bloqueando mouseup');
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-  }, true);
-  
+  // Teclado também precisa ser bloqueado para não vazar
   host.addEventListener('keydown', (e) => {
-    console.log('🛡️ Host bloqueando keydown:', e.key);
     e.stopPropagation();
     e.stopImmediatePropagation();
   }, true);
@@ -670,35 +669,4 @@ document.addEventListener('keydown', (e) => {
     hideMacroPanel();
     if (currentInput) currentInput.focus();
   }
-}, true);document.addEventListener('mousedown', (e) => {
-  if (macroPanel && macroPanel.style.display !== 'none') {
-    if (macroPanel.contains(e.target)) {
-      console.log('🛡️ Bloqueando mousedown para Bird');
-    }
-  }
-}, false);
-
-document.addEventListener('mouseup', (e) => {
-  if (macroPanel && macroPanel.style.display !== 'none') {
-    if (macroPanel.contains(e.target)) {
-      console.log('🛡️ Bloqueando mouseup para Bird');
-    }
-  }
-}, false);
-
-// Para teclado, bloqueia em BUBBLE depois do handler processar
-document.addEventListener('keydown', (e) => {
-  if (macroPanel && macroPanel.style.display !== 'none') {
-    if (macroPanel.contains(e.target)) {
-      console.log('🛡️ Bloqueando keydown para Bird:', e.key);
-    }
-  }
-}, false);
-
-document.addEventListener('keyup', (e) => {
-  if (macroPanel && macroPanel.style.display !== 'none') {
-    if (macroPanel.contains(e.target)) {
-      console.log('🛡️ Bloqueando keyup para Bird');
-    }
-  }
-}, false);
+}, true);
