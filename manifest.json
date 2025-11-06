@@ -3,30 +3,40 @@
   "name": "MacroPaste",
   "version": "2.0",
   "description": "Extensão para criar e usar macros de texto rapidamente",
+  
   "permissions": [
     "storage",
     "activeTab",
     "clipboardWrite"
   ],
+
   "action": {
     "default_popup": "popup.html",
     "default_icon": "icons/icon128.svg"
   },
+
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
       "css": ["content.css"],
-      "run_at": "document_end"
+      "all_frames": true,
+      "run_at": "document_idle"
     }
   ],
+
   "web_accessible_resources": [
     {
       "resources": ["content.css"],
       "matches": ["<all_urls>"]
     }
   ],
+
   "icons": {
     "128": "icons/icon128.svg"
+  },
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
   }
 }

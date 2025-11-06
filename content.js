@@ -1,698 +1,315 @@
-// === VARIÁVEIS GLOBAIS ===
-let currentInput = null;
-let macroPanel = null;
-let selectedIndex = 0;
-let filteredMacros = [];
-let birdOverlayDisabler = null;
-let chatReactivator = null;
+let panel, searchInput, listEl, currentInput;
+let macros = {};
+let filtered = [];
+let selected = 0;
 
-// === SOFT BLOCK: IMPEDE APENAS VAZAMENTO PARA DOCUMENT ===
-function hardBlockEventsForPanel(host) {
-  // Bloqueia apenas mousedown/mouseup que poderiam fechar o Bird
-  const criticalEvents = ["mousedown", "mouseup"];
-  
-  criticalEvents.forEach(ev => {
-    document.addEventListener(ev, (e) => {
-      // Se o evento veio de dentro do nosso painel, bloqueia no document
-      if (host.contains(e.target)) {
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        console.log("🛡️ Bloqueio no document:", ev);
-      }
-    }, true); // CAPTURE no document para pegar antes do Bird
-  });
-  
-  console.log('🔥 Soft-block ativado no document para eventos críticos');
+(function () {
+  const style = document.createElement("style");
+  style.innerHTML = `
+    #macro-search[data-placeholder]:empty:before {
+      content: attr(data-placeholder);
+      color: #888;
+      pointer-events: none;
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+function getDoc() {
+  const active = document.activeElement;
+  if (active && active.tagName === "IFRAME" && active.contentDocument) {
+    return active.contentDocument;
+  }
+  return document;
 }
 
-// === CRIAR PAINEL COM SHADOW DOM ===
-function createMacroPanel() {
-  if (macroPanel && document.body.contains(macroPanel)) return macroPanel;
+function createPanel() {
+  const doc = getDoc();
+  if (panel && doc.body.contains(panel)) return panel;
 
-  // Cria container host isolado com pointer-events: auto
-  const host = document.createElement('div');
-  host.id = 'macro-paste-host';
-  host.style.cssText = `
-    position: fixed !important;
-    z-index: 2147483647 !important;
+  panel = doc.createElement("div");
+  panel.id = "macro-paste-panel";
+  panel.style.cssText = `
+    position: fixed;
+    z-index: 2147483647;
+    width: 360px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.25);
+    font-family: sans-serif;
+    display: none;
     pointer-events: auto !important;
-    isolation: isolate !important;
-    transform: translateZ(0) !important;
-    will-change: transform !important;
   `;
-  document.body.appendChild(host);
-  
-  // 🔥 ATIVA HARD-BLOCK: Impede que eventos cheguem aos listeners globais do Bird
-  hardBlockEventsForPanel(host);
-  
-  console.log('✅ Host criado com pointer-events: auto');
-
-  // 🔥 Cria Shadow Root para isolar eventos e CSS completamente
-  const shadow = host.attachShadow({ mode: 'open' });
-
-  // Importa CSS externo para o Shadow DOM
-  const linkElem = document.createElement('link');
-  linkElem.setAttribute('rel', 'stylesheet');
-  linkElem.setAttribute('href', chrome.runtime.getURL('content.css'));
-  shadow.appendChild(linkElem);
-
-  const panel = document.createElement('div');
-  panel.id = 'macro-paste-panel';
-  panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-modal', 'false');
 
   panel.innerHTML = `
-    <input type="text" id="macro-search" placeholder="Buscar..." autocomplete="off">
-    <div id="macro-list"></div>
+    <div id="macro-search" contenteditable="true" style="
+      width:100%; padding:10px; border:none; border-bottom:1px solid #eee;
+      font-size:14px; outline:none; height:40px; line-height:20px;
+      font-family:sans-serif; box-sizing:border-box;
+      white-space:nowrap; overflow:hidden;
+    " data-placeholder="Buscar macro..."></div>
+    <div id="macro-list" style="max-height:260px; overflow-y:auto;"></div>
   `;
 
-  shadow.appendChild(panel);
+  doc.body.appendChild(panel);
 
-  // IMPORTANTE: macroPanel agora é o HOST, mas salvamos referência ao shadow
-  macroPanel = host;
-  macroPanel.shadowRoot = shadow;
-  macroPanel.panel = panel;
+  searchInput = panel.querySelector("#macro-search");
+  listEl = panel.querySelector("#macro-list");
 
-  const searchInput = shadow.getElementById('macro-search');
-  
-  // Handlers normais
-  searchInput.addEventListener('input', handleSearch, false);
-  searchInput.addEventListener('keydown', handleKeydown, false);
-  
-  // Log quando o input recebe foco
-  searchInput.addEventListener('focus', () => {
-    console.log('✅ Campo de busca FOCADO!');
+  // 🔥 Permitir digitação normal dentro do campo
+  ["compositionstart", "compositionupdate", "compositionend"].forEach(evt => {
+    searchInput.addEventListener(evt, e => e.stopPropagation(), { capture: true });
   });
-  
-  searchInput.addEventListener('blur', () => {
-    console.log('⚠️ Campo de busca PERDEU FOCO!');
+
+  ["beforeinput", "input", "keydown", "keypress"].forEach(evt => {
+    searchInput.addEventListener(evt, e => e.stopPropagation());
   });
-  
-  // NÃO bloqueia teclado no host - deixa funcionar normalmente
-  
-  return host;
-}
 
-// === PASSO 2: DESATIVA OVERLAY DO BIRD ===
-function disableBirdOverlay() {
-  // Desativa todas as camadas de overlay do Bird/Intercom
-  document.querySelectorAll(`
-    [class*="intercom"],
-    iframe[src*="intercom"],
-    div[id*="bird"],
-    iframe[id*="bird"],
-    [class*="bird"],
-    div[class*="backdrop"],
-    div[class*="overlay"]
-  `).forEach(el => {
-    if (el !== macroPanel && !macroPanel?.contains(el)) {
-      el.style.pointerEvents = "none";
-      console.log('🚫 Desativado overlay:', el.tagName, el.className || el.id);
-    }
-  });
-}
-
-// === PASSO 3: REATIVA APENAS A ÁREA DO CHAT ===
-function reactivateChatArea() {
-  // Reativa apenas o iframe do chat, não o overlay
-  const chatIframes = [
-    document.querySelector("iframe[src*='intercom']"),
-    document.querySelector("iframe[id*='bird']"),
-    document.querySelector("iframe[name*='intercom']")
-  ].filter(Boolean);
-
-  chatIframes.forEach(chat => {
-    if (chat && chat.style.pointerEvents === "none") {
-      chat.style.pointerEvents = "auto";
-      console.log('✅ Chat reativado:', chat.src || chat.id);
-    }
-  });
-}
-
-// === POSICIONAR PAINEL ===
-function positionPanel(element) {
-  const rect = element.getBoundingClientRect();
-  const panelHeight = 350; // Altura aproximada do painel (300px lista + 50px busca)
-  const screenHeight = window.innerHeight;
-  const screenMiddle = screenHeight / 2;
-  
-  // Se o input está na metade inferior da tela, abrir ACIMA
-  if (rect.top > screenMiddle) {
-    macroPanel.style.top = (rect.top - panelHeight - 5) + 'px';
-    macroPanel.style.bottom = 'auto';
-  } 
-  // Se está na metade superior, abrir ABAIXO
-  else {
-    macroPanel.style.top = (rect.bottom + 5) + 'px';
-    macroPanel.style.bottom = 'auto';
-  }
-  
-  // Posição horizontal
-  macroPanel.style.left = rect.left + 'px';
-  
-  // Ajustar se sair da tela horizontalmente
-  setTimeout(() => {
-    const panelRect = macroPanel.getBoundingClientRect();
-    if (panelRect.right > window.innerWidth) {
-      macroPanel.style.left = (window.innerWidth - panelRect.width - 10) + 'px';
-    }
-    if (panelRect.left < 0) {
-      macroPanel.style.left = '10px';
-    }
-  }, 0);
-}
-
-// === MOSTRAR PAINEL ===
-function showMacroPanel(element) {
-  console.log('📂 showMacroPanel chamado! Element:', element?.tagName, element?.className);
-  currentInput = element;
-  
-  chrome.storage.sync.get(['macros'], (result) => {
-    const macros = result.macros || {};
-    if (Object.keys(macros).length === 0) {
-      console.log('⚠️ Nenhuma macro encontrada no storage');
-      return;
-    }
-    
-    console.log('✅ Macros carregadas:', Object.keys(macros).length);
-    filteredMacros = Object.entries(macros);
-    selectedIndex = 0;
-    
-    const panel = createMacroPanel();
-    displayMacros();
-    
-    // 🔥 INICIA os intervals para desativar overlay do Bird
-    if (!birdOverlayDisabler) {
-      console.log('🔥 Iniciando proteção contra overlay do Bird...');
-      disableBirdOverlay(); // Executa imediatamente
-      birdOverlayDisabler = setInterval(disableBirdOverlay, 500);
-    }
-    
-    if (!chatReactivator) {
-      reactivateChatArea(); // Executa imediatamente
-      chatReactivator = setInterval(reactivateChatArea, 500);
-    }
-    
-    // Remove e adiciona novamente para garantir que fique por cima
-    if (panel.parentElement) {
-      panel.parentElement.removeChild(panel);
-    }
-    document.body.appendChild(panel);
-    
-    // Mostra o painel interno no Shadow DOM
-    panel.panel.style.display = 'block';
-    
-    positionPanel(element);
-    
-    // Foca com delay e força o foco múltiplas vezes
-    setTimeout(() => {
-      const searchInput = panel.shadowRoot.getElementById('macro-search');
-      if (searchInput) {
-        console.log('🎯 Focando no campo de busca...');
-        searchInput.focus();
-        
-        // Força foco novamente após um momento
-        setTimeout(() => {
-          searchInput.focus();
-          console.log('✅ Campo de busca focado! activeElement:', document.activeElement);
-        }, 10);
-        
-        // E mais uma vez para garantir
-        setTimeout(() => {
-          searchInput.focus();
-        }, 50);
-      }
-    }, 50);
-  });
-}
-
-// === ESCONDER PAINEL ===
-function hideMacroPanel() {
-  if (macroPanel) {
-    macroPanel.panel.style.display = 'none';
-  }
-  
-  // Para os intervals quando o painel fecha
-  if (birdOverlayDisabler) {
-    console.log('🛑 Parando proteção contra overlay do Bird');
-    clearInterval(birdOverlayDisabler);
-    birdOverlayDisabler = null;
-  }
-  
-  if (chatReactivator) {
-    clearInterval(chatReactivator);
-    chatReactivator = null;
-  }
-  
-  // Reativa todos os overlays do Bird quando fecha o menu
-  document.querySelectorAll(`
-    [class*="intercom"],
-    iframe[src*="intercom"],
-    div[id*="bird"],
-    iframe[id*="bird"],
-    [class*="bird"]
-  `).forEach(el => {
-    el.style.pointerEvents = "";
-  });
-}
-
-// === EXIBIR MACROS ===
-function displayMacros() {
-  const list = macroPanel.shadowRoot.getElementById('macro-list');
-  list.innerHTML = '';
-  
-  if (filteredMacros.length === 0) {
-    list.innerHTML = '<div class="empty">Nenhuma macro encontrada</div>';
-    return;
-  }
-  
-  filteredMacros.forEach(([cmd, txt], i) => {
-    const item = document.createElement('div');
-    item.className = 'macro-item' + (i === selectedIndex ? ' selected' : '');
-    item.innerHTML = `<span class="cmd"><span class="icon">›</span>${cmd}</span><span class="txt">${txt.substring(0, 50)}</span>`;
-    
-      // Handler de clique simples
-    item.addEventListener('click', (e) => {
-      console.log('🖱️ Click no item:', i, cmd);
-      e.stopPropagation(); // Apenas bloqueia propagação, não preventDefault
-      selectMacro(i);
-    }, false);
-    
-    // Bloqueia mousedown para não vazar para fora
-    item.addEventListener('mousedown', (e) => {
-      console.log('🖱️ Mousedown no item:', i);
+  // Impede o Bird/Slate de fechar o chat ao clicar no painel
+  ["mousedown", "pointerdown", "click", "wheel"].forEach(evt => {
+    panel.addEventListener(evt, e => {
       e.stopPropagation();
-    }, false);
-    
-    // Hover atualiza seleção
-    item.addEventListener('mouseenter', () => {
-      selectedIndex = i;
-      updateSelection();
+      e.stopImmediatePropagation();
+    }, { capture: true });
+  });
+
+  // Ignorado pelo editor Slate
+  searchInput.setAttribute("data-slate-ignore", "true");
+  searchInput.setAttribute("role", "textbox");
+
+  // Busca dinâmica
+  searchInput.addEventListener("input", () => {
+    applyFilter((searchInput.textContent || "").trim());
+  });
+
+  // Navegação
+  searchInput.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      selected = Math.min(selected + 1, filtered.length - 1);
+      renderList();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      selected = Math.max(selected - 1, 0);
+      renderList();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (filtered.length > 0) insertMacro(filtered[selected][1]);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closePanel();
+    }
+  });
+
+  return panel;
+}
+
+window.addEventListener("keydown", e => {
+  if (panel && panel.style.display === "block" && document.activeElement !== searchInput) {
+    if (["Escape", "ArrowDown", "ArrowUp", "Enter", "Shift", "Control", "Alt", "Meta"].includes(e.key))
+      return;
+
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (e.key === "Backspace") {
+      searchInput.textContent = searchInput.textContent.slice(0, -1);
+    } else if (e.key.length === 1) {
+      searchInput.textContent += e.key;
+    }
+
+    applyFilter(searchInput.textContent.trim());
+  }
+}, true);
+
+function positionPanel(el) {
+  const rect = el.getBoundingClientRect();
+  const panelHeight = panel.offsetHeight || 300;
+  const spacing = 6;
+
+  const spaceAbove = rect.top;
+  const spaceBelow = window.innerHeight - rect.bottom;
+
+  if (spaceBelow < panelHeight && spaceAbove > panelHeight) {
+    panel.style.top = (rect.top - panelHeight - spacing) + "px";
+  } else {
+    panel.style.top = (rect.bottom + spacing) + "px";
+  }
+
+  panel.style.left = rect.left + "px";
+  const panelRect = panel.getBoundingClientRect();
+  if (panelRect.right > window.innerWidth) {
+    panel.style.left = (window.innerWidth - panelRect.width - 10) + "px";
+  }
+  if (panelRect.left < 0) {
+    panel.style.left = "10px";
+  }
+}
+
+function openPanel(el) {
+  currentInput = el;
+  createPanel();
+
+  chrome.storage.sync.get(["macros"], res => {
+    macros = res.macros || {};
+    filtered = Object.entries(macros);
+    selected = 0;
+
+    renderList();
+    panel.style.display = "block";
+    positionPanel(el);
+    searchInput.textContent = "";
+
+    const doc = getDoc();
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try {
+          searchInput.focus();
+          const range = doc.createRange();
+          const sel = doc.getSelection();
+          range.selectNodeContents(searchInput);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } catch (err) {
+          console.warn("Falha ao focar campo de busca:", err);
+        }
+      }, 100);
     });
-    
-    list.appendChild(item);
   });
 }
 
-// === ATUALIZAR SELEÇÃO ===
-function updateSelection() {
-  const items = macroPanel.shadowRoot.querySelectorAll('.macro-item');
-  items.forEach((item, i) => {
-    item.className = 'macro-item' + (i === selectedIndex ? ' selected' : '');
-  });
-  
-  // Scroll automático para o item selecionado
-  scrollToSelected();
+function closePanel() {
+  if (panel) panel.style.display = "none";
+  if (currentInput) currentInput.focus();
 }
 
-// === BUSCAR MACROS ===
-function handleSearch(e) {
-  const query = e.target.value.toLowerCase();
-  console.log('🔍 Busca:', query);
-  
-  chrome.storage.sync.get(['macros'], (result) => {
-    const macros = result.macros || {};
-    filteredMacros = Object.entries(macros).filter(([cmd, txt]) => 
-      cmd.toLowerCase().includes(query) || txt.toLowerCase().includes(query)
-    );
-    selectedIndex = 0;
-    console.log('📊 Resultados filtrados:', filteredMacros.length);
-    displayMacros();
-  });
+function applyFilter(q) {
+  q = q.toLowerCase();
+  filtered = Object.entries(macros).filter(([cmd, txt]) =>
+    cmd.toLowerCase().includes(q) || txt.toLowerCase().includes(q)
+  );
+  selected = 0;
+  renderList();
 }
 
-// === NAVEGAÇÃO COM TECLADO ===
-function handleKeydown(e) {
-  console.log('🔑 handleKeydown chamado! Tecla:', e.key, 'Target:', e.target.id || e.target.tagName);
-  
-  // Lista de teclas que devemos tratar
-  const handled = ['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(e.key);
-  
-  if (!handled) {
-    console.log('⚠️ Tecla não tratada:', e.key);
+function renderList() {
+  listEl.innerHTML = "";
+  if (!filtered.length) {
+    listEl.innerHTML = `<div style="padding:12px; color:#666; text-align:center;">Nenhuma macro encontrada</div>`;
     return;
   }
-  
-  console.log('✅ Tecla reconhecida:', e.key);
-  e.preventDefault(); // Impede comportamento padrão
-  e.stopPropagation(); // Impede propagação para fora
-  
-  switch(e.key) {
-    case 'ArrowDown':
-      selectedIndex = Math.min(selectedIndex + 1, filteredMacros.length - 1);
-      updateSelection();
-      console.log('⬇️ Arrow Down - selectedIndex:', selectedIndex, '/', filteredMacros.length);
-      break;
-    case 'ArrowUp':
-      selectedIndex = Math.max(selectedIndex - 1, 0);
-      updateSelection();
-      console.log('⬆️ Arrow Up - selectedIndex:', selectedIndex, '/', filteredMacros.length);
-      break;
-    case 'Enter':
-      console.log('✨ Enter pressed - selecting macro:', selectedIndex);
-      e.stopImmediatePropagation(); // Garante que nada mais capture este Enter
-      selectMacro(selectedIndex);
-      break;
-    case 'Escape':
-      console.log('🚪 Escape - fechando painel');
-      hideMacroPanel();
-      // Restaura foco no input original ou busca um válido
-      if (currentInput && document.body.contains(currentInput)) {
-        currentInput.focus();
-      } else {
-        const input = document.querySelector('[contenteditable="true"]') || 
-                     document.querySelector('textarea') ||
-                     document.querySelector('input[type="text"]');
-        if (input) input.focus();
+
+  filtered.forEach(([cmd, text], i) => {
+    let preview = text.trim();
+    const maxLen = 55;
+    if (preview.length > maxLen) preview = preview.slice(0, maxLen) + "...";
+
+    const item = document.createElement("div");
+    item.className = "macro-item" + (i === selected ? " selected" : "");
+    item.style.cssText = `
+      padding:10px 14px; cursor:pointer; border-bottom:1px solid #f5f5f5;
+      background:${i === selected ? "#ffeaf6" : "white"};
+    `;
+    item.innerHTML = `
+      <div style="font-size:14px;"> > ${cmd} </div>
+      <div style="font-size:12px; color:#666; margin-top:3px; opacity:0.8;">${preview}</div>
+    `;
+
+    item.addEventListener("mousedown", e => {
+      e.stopPropagation();
+      insertMacro(text);
+      closePanel();
+    }, { capture: true });
+
+    item.addEventListener("mouseenter", () => {
+      selected = i;
+      renderList();
+    });
+
+    listEl.appendChild(item);
+  });
+}
+
+function insertMacro(text) {
+  if (panel) panel.style.display = "none";
+
+  requestAnimationFrame(() => {
+    if (currentInput) currentInput.focus();
+
+    requestAnimationFrame(() => {
+      const doc = getDoc();
+
+      if (currentInput && (currentInput.tagName === "INPUT" || currentInput.tagName === "TEXTAREA")) {
+        const start = currentInput.selectionStart || 0;
+        const end = currentInput.selectionEnd || 0;
+        const val = currentInput.value || "";
+        currentInput.value = val.substring(0, start) + text + val.substring(end);
+        currentInput.selectionStart = currentInput.selectionEnd = start + text.length;
+        currentInput.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
       }
-      break;
-    case 'Tab':
-      console.log('⭾ Tab bloqueado');
-      break;
-  }
-}
 
-// === SCROLL PARA ITEM SELECIONADO ===
-function scrollToSelected() {
-  const list = macroPanel.shadowRoot.getElementById('macro-list');
-  const items = macroPanel.shadowRoot.querySelectorAll('.macro-item');
-  const selectedItem = items[selectedIndex];
-  
-  if (selectedItem && list) {
-    const itemTop = selectedItem.offsetTop;
-    const itemBottom = itemTop + selectedItem.offsetHeight;
-    const listTop = list.scrollTop;
-    const listBottom = listTop + list.clientHeight;
-    
-    if (itemBottom > listBottom) {
-      list.scrollTop = itemBottom - list.clientHeight;
-    } else if (itemTop < listTop) {
-      list.scrollTop = itemTop;
-    }
-  }
-}
+      const sel = doc.getSelection();
+      if (!sel || !sel.rangeCount) return;
+      const target = sel.anchorNode?.parentElement || currentInput;
+      if (!target) return;
 
-// ===============================
-// DIGITAÇÃO ULTRA-REALISTA
-// ===============================
-// Simula perfeitamente uma pessoa real digitando
-// Engana Slate, Quill, React, BIRD Chat com eventos de teclado completos
-// ===============================
-
-/**
- * Gera keyCode realista para cada caractere
- */
-function getKeyCode(char) {
-  const code = char.charCodeAt(0);
-  if (char >= 'a' && char <= 'z') return char.toUpperCase().charCodeAt(0);
-  if (char >= 'A' && char <= 'Z') return code;
-  if (char >= '0' && char <= '9') return code;
-  
-  const specialKeys = {
-    ' ': 32, '\n': 13, '\t': 9, '.': 190, ',': 188, ';': 186,
-    ':': 186, '!': 49, '?': 191, '-': 189, '_': 189, '=': 187,
-    '+': 187, '[': 219, ']': 221, '{': 219, '}': 221, '\\': 220,
-    '|': 220, '/': 191, '<': 188, '>': 190, '(': 57, ')': 48,
-    "'": 222, '"': 222, '`': 192, '~': 192, '@': 50, '#': 51,
-    '$': 52, '%': 53, '^': 54, '&': 55, '*': 56
-  };
-  
-  return specialKeys[char] || code;
-}
-
-/**
- * Verifica se caractere precisa de Shift
- */
-function needsShift(char) {
-  return /[A-Z!@#$%^&*()_+{}|:"<>?~]/.test(char);
-}
-
-/**
- * Calcula delay realista entre teclas com variação humana avançada
- */
-function getHumanDelay(baseDelay, char, prevChar, isTypingFast) {
-  // Distribução gaussiana melhorada (4 valores para maior naturalidade)
-  const randomFactor = (Math.random() + Math.random() + Math.random() + Math.random()) / 4;
-  
-  // Variação base mais ampla
-  let delay = baseDelay + (baseDelay * randomFactor * 0.8);
-  
-  // Delays extras realistas baseados no caractere
-  if (char === ' ') delay *= 1.2; // Espaços levemente mais lentos
-  if (char === '.' || char === ',' || char === '!' || char === '?') delay *= 1.4; // Pontuação mais lenta
-  if (char === '\n') delay *= 1.8; // Quebra de linha mais pensada
-  if (char === char.toUpperCase() && /[A-Z]/.test(char) && prevChar === ' ') delay *= 1.3; // Início de frase
-  
-  // Padrão de digitação rápida/lenta (fadiga humana)
-  if (isTypingFast) {
-    delay *= 0.7; // 30% mais rápido
-  } else {
-    delay *= 1.15; // 15% mais lento
-  }
-  
-  // Variação extra aleatória final
-  delay += (Math.random() - 0.5) * 15;
-  
-  return Math.max(15, Math.floor(delay)); // Mínimo 15ms
-}
-
-/**
- * Simula "pensar" durante a digitação (pausa natural)
- */
-async function thinkPause() {
-  const pauseDuration = 80 + Math.random() * 180; // 80-260ms
-  await new Promise(r => setTimeout(r, pauseDuration));
-}
-
-/**
- * Inserção de texto caractere por caractere para Slate
- * Slate não aceita paste events, precisa simular digitação real
- */
-async function typeTextHuman(element, text) {
-  if (!element || !text) return;
-
-  console.log('🔤 Iniciando digitação de', text.length, 'caracteres...');
-  element.focus();
-  await new Promise(r => setTimeout(r, 100));
-
-  const isEditable = element.isContentEditable;
-
-  // Para contenteditable (Slate), insere caractere por caractere
-  if (isEditable) {
-    const selection = window.getSelection();
-    
-    // Posiciona cursor no final
-    if (!selection.rangeCount) {
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      range.collapse(false);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-
-    // Insere cada caractere com evento beforeinput + input
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      
-      // Dispara beforeinput
-      const beforeInput = new InputEvent('beforeinput', {
-        inputType: 'insertText',
-        data: char,
+      const before = new InputEvent("beforeinput", {
+        inputType: "insertText",
+        data: text,
         bubbles: true,
         cancelable: true,
         composed: true
       });
-      element.dispatchEvent(beforeInput);
-      
-      if (beforeInput.defaultPrevented) {
-        console.warn('⚠️ beforeinput foi cancelado para:', char);
-        continue;
+      target.dispatchEvent(before);
+
+      if (!before.defaultPrevented) {
+        const range = sel.getRangeAt(0);
+        const node = doc.createTextNode(text);
+        range.insertNode(node);
+        range.setStartAfter(node);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        target.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: text, bubbles: true }));
       }
-
-      // Insere o caractere manualmente no DOM
-      const range = selection.getRangeAt(0);
-      const textNode = document.createTextNode(char);
-      range.insertNode(textNode);
-      range.setStartAfter(textNode);
-      range.collapse(true);
-      selection.removeAllRanges();
-      selection.addRange(range);
-
-      // Dispara input event
-      const inputEvent = new InputEvent('input', {
-        inputType: 'insertText',
-        data: char,
-        bubbles: true,
-        composed: true
-      });
-      element.dispatchEvent(inputEvent);
-      
-      // Pequeno delay para parecer natural
-      if (i < text.length - 1) {
-        await new Promise(r => setTimeout(r, 5)); // 5ms entre caracteres
-      }
-    }
-    
-    console.log('✅ Digitação completa!');
-  } 
-  // Para input/textarea normais
-  else if (element.setSelectionRange) {
-    const start = element.selectionStart || 0;
-    element.value = element.value.substring(0, start) + text + element.value.substring(element.selectionEnd || start);
-    element.selectionStart = element.selectionEnd = start + text.length;
-    
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    console.log('✅ Texto inserido em input/textarea');
-  }
-}
-
-// ===============================
-// Inserção segura de um caractere
-// ===============================
-function insertChar(element, char, attempt = 0) {
-  const MAX_ATTEMPTS = 3; // Limite de tentativas para evitar recursão infinita
-  const before = element.isContentEditable ? element.innerText : element.value;
-
-  const beforeInput = new InputEvent("beforeinput", {
-    inputType: "insertText",
-    data: char,
-    bubbles: true,
-    cancelable: true,
+    });
   });
-  element.dispatchEvent(beforeInput);
-
-  if (beforeInput.defaultPrevented) return;
-
-  if (element.isContentEditable) {
-    const sel = window.getSelection();
-    if (!sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    range.deleteContents();
-    const node = document.createTextNode(char);
-    range.insertNode(node);
-    range.setStartAfter(node);
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
-  } else if (element.tagName === "INPUT" || element.tagName === "TEXTAREA") {
-    const start = element.selectionStart || 0;
-    const end = element.selectionEnd || 0;
-    element.value =
-      element.value.substring(0, start) + char + element.value.substring(end);
-    element.selectionStart = element.selectionEnd = start + 1;
-  }
-
-  element.dispatchEvent(
-    new InputEvent("input", {
-      inputType: "insertText",
-      data: char,
-      bubbles: true,
-    })
-  );
-
-  // Garantia: reenvia se o texto não mudou (com limite de tentativas)
-  const after = element.isContentEditable ? element.innerText : element.value;
-  if (after === before && attempt < MAX_ATTEMPTS) {
-    console.warn(`Reenvio de caractere (tentativa ${attempt + 1}/${MAX_ATTEMPTS}):`, char);
-    element.focus();
-    insertChar(element, char, attempt + 1);
-  } else if (after === before && attempt >= MAX_ATTEMPTS) {
-    console.error("Falha ao inserir caractere após múltiplas tentativas:", char);
-  }
 }
 
-// === SELECIONAR MACRO ===
-async function selectMacro(index) {
-  console.log('🎯 selectMacro chamado! Index:', index, 'Total:', filteredMacros.length);
-  
-  if (index < 0 || index >= filteredMacros.length) {
-    console.log('❌ Índice inválido');
+document.addEventListener("keydown", e => {
+  if (panel && e.target === searchInput) return;
+
+  if (
+    (e.key === ">" || (e.keyCode === 190 && e.shiftKey)) &&
+    (
+      e.target.isContentEditable ||
+      e.target.tagName === "TEXTAREA" ||
+      e.target.tagName === "INPUT"
+    )
+  ) {
+    e.preventDefault();
+    openPanel(e.target);
     return;
   }
-  
-  const [cmd, text] = filteredMacros[index];
-  console.log('📝 Selecionando macro:', cmd, 'Texto:', text.substring(0, 30) + '...');
-  
-  // SEMPRE usa currentInput guardado (nunca busca dinamicamente)
-  let targetInput = currentInput;
-  
-  if (!targetInput || !document.body.contains(targetInput)) {
-    console.log('❌ ERRO: currentInput foi perdido! Element:', currentInput?.tagName);
-    console.log('🔍 Tentando recuperar o input original...');
-    
-    // Busca pelo DIV do Bird com classe slate-editor (visto nos logs)
-    const possibleInputs = [
-      document.querySelector('.slate-editor[contenteditable="true"]'),
-      document.querySelector('[contenteditable="true"].slate-editor'),
-      document.querySelector('[contenteditable="true"]'),
-      document.querySelector('div[role="textbox"]')
-    ];
-    
-    targetInput = possibleInputs.find(el => el !== null);
-    console.log('🔍 Input recuperado:', targetInput?.tagName, targetInput?.classList?.value);
-  } else {
-    console.log('✅ Usando currentInput original:', targetInput?.tagName, targetInput?.classList?.value);
-  }
-  
-  if (targetInput && document.body.contains(targetInput)) {
-    console.log('✅ Input válido encontrado! Focando e inserindo texto...');
-    
-    // Fecha o painel DEPOIS de ter certeza que temos o input
-    hideMacroPanel();
-    
-    // Aguarda um pouco mais antes de focar
-    await new Promise(r => setTimeout(r, 150));
-    
-    targetInput.focus();
-    console.log('🎯 Foco estabelecido em:', document.activeElement?.tagName);
-    
-    // Aguarda mais um momento
-    await new Promise(r => setTimeout(r, 100));
-    
-    await typeTextHuman(targetInput, text);
-    console.log('✅ Texto inserido com sucesso!');
-  } else {
-    console.log('❌ Nenhum input válido encontrado');
-    hideMacroPanel();
-  }
-}
 
-// === BLOQUEAR TECLA ">" ===
-function blockGreaterThan(e) {
-  const t = e.target;
-  if ((e.key === '>' || (e.keyCode === 190 && e.shiftKey)) &&
-      (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+  if (!panel || panel.style.display === "none") return;
+
+  if (e.key === "ArrowDown") {
     e.preventDefault();
-    e.stopPropagation();
-    
-    if (!macroPanel || !macroPanel.panel || macroPanel.panel.style.display !== 'block') {
-      setTimeout(() => showMacroPanel(t), 10);
-    }
-  }
-}
-
-// === LISTENERS GLOBAIS ===
-document.addEventListener('keydown', blockGreaterThan, true);
-document.addEventListener('keypress', blockGreaterThan, true);
-
-// Listener de cliques - fecha painel ao clicar fora (mas NÃO bloqueia o clique)
-document.addEventListener('mousedown', (e) => {
-  if (macroPanel && macroPanel.panel && macroPanel.panel.style.display !== 'none') {
-    if (!macroPanel.contains(e.target)) {
-      console.log('👆 Clique fora do painel - fechando');
-      hideMacroPanel();
-    }
-  }
-  // NÃO bloqueia propagação aqui - só fecha o painel
-}, false); // BUBBLE PHASE para não interferir com outros handlers
-
-  // Listener de ESC global
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && macroPanel && macroPanel.panel && macroPanel.panel.style.display !== 'none') {
+    selected = Math.min(selected + 1, filtered.length - 1);
+    renderList();
+  } else if (e.key === "ArrowUp") {
     e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    hideMacroPanel();
-    if (currentInput) currentInput.focus();
+    selected = Math.max(selected - 1, 0);
+    renderList();
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    insertMacro(filtered[selected][1]);
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    closePanel();
   }
-}, true);
+}, { capture: true });
