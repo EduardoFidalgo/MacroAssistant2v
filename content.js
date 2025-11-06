@@ -213,8 +213,8 @@ function renderList() {
       background:${i === selected ? "#ffeaf6" : "white"};
     `;
     item.innerHTML = `
-      <div style="font-size:14px;"> > ${cmd} </div>
-      <div style="font-size:12px; color:#666; margin-top:3px; opacity:0.8;">${preview}</div>
+      <div style="font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"> > ${cmd} </div>
+      <div style="font-size:12px; color:#666; margin-top:3px; opacity:0.8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${preview}</div>
     `;
 
     item.addEventListener("mousedown", e => {
