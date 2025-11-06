@@ -6,21 +6,23 @@ let filteredMacros = [];
 let birdOverlayDisabler = null;
 let chatReactivator = null;
 
-// === HARD BLOCK: IMPEDE EVENTOS DE CHEGAREM AO DOCUMENT ===
+// === SOFT BLOCK: IMPEDE APENAS VAZAMENTO PARA DOCUMENT ===
 function hardBlockEventsForPanel(host) {
-  const events = ["click", "mousedown", "mouseup", "touchstart", "touchend", "pointerdown", "pointerup"];
+  // Bloqueia apenas mousedown/mouseup que poderiam fechar o Bird
+  const criticalEvents = ["mousedown", "mouseup"];
   
-  events.forEach(ev => {
-    host.addEventListener(ev, (e) => {
-      // Só bloqueia se o evento já terminou de processar internamente (BUBBLE PHASE)
-      // NÃO bloqueia em capture, deixa o evento processar normalmente primeiro
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      console.log("🛡️ Hard-block (bubble)", ev, "origin:", e.target.id || e.target.tagName);
-    }, false); // ⚠️ BUBBLE mode - deixa eventos funcionarem DENTRO do Shadow DOM primeiro
+  criticalEvents.forEach(ev => {
+    document.addEventListener(ev, (e) => {
+      // Se o evento veio de dentro do nosso painel, bloqueia no document
+      if (host.contains(e.target)) {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        console.log("🛡️ Bloqueio no document:", ev);
+      }
+    }, true); // CAPTURE no document para pegar antes do Bird
   });
   
-  console.log('🔥 Hard-block ativado para', events.length, 'eventos em BUBBLE mode');
+  console.log('🔥 Soft-block ativado no document para eventos críticos');
 }
 
 // === CRIAR PAINEL COM SHADOW DOM ===
@@ -86,17 +88,7 @@ function createMacroPanel() {
     console.log('⚠️ Campo de busca PERDEU FOCO!');
   });
   
-  // Teclado em BUBBLE phase - deixa Shadow DOM processar primeiro
-  host.addEventListener('keydown', (e) => {
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    console.log('🛡️ Teclado bloqueado (bubble):', e.key);
-  }, false);
-  
-  host.addEventListener('keyup', (e) => {
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-  }, false);
+  // NÃO bloqueia teclado no host - deixa funcionar normalmente
   
   return host;
 }
@@ -473,20 +465,23 @@ async function thinkPause() {
 }
 
 /**
- * Inserção instantânea via PASTE
- * Simula Ctrl+V para inserir todo o texto de uma vez
+ * Inserção de texto caractere por caractere para Slate
+ * Slate não aceita paste events, precisa simular digitação real
  */
 async function typeTextHuman(element, text) {
   if (!element || !text) return;
 
+  console.log('🔤 Iniciando digitação de', text.length, 'caracteres...');
   element.focus();
-  await new Promise(r => setTimeout(r, 50));
+  await new Promise(r => setTimeout(r, 100));
 
   const isEditable = element.isContentEditable;
-  const selection = window.getSelection();
 
-  // Posiciona cursor no final
-  if (isEditable && selection) {
+  // Para contenteditable (Slate), insere caractere por caractere
+  if (isEditable) {
+    const selection = window.getSelection();
+    
+    // Posiciona cursor no final
     if (!selection.rangeCount) {
       const range = document.createRange();
       range.selectNodeContents(element);
@@ -494,32 +489,61 @@ async function typeTextHuman(element, text) {
       selection.removeAllRanges();
       selection.addRange(range);
     }
-  } else if (element.setSelectionRange) {
-    const len = element.value?.length || 0;
-    element.setSelectionRange(len, len);
+
+    // Insere cada caractere com evento beforeinput + input
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      
+      // Dispara beforeinput
+      const beforeInput = new InputEvent('beforeinput', {
+        inputType: 'insertText',
+        data: char,
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      });
+      element.dispatchEvent(beforeInput);
+      
+      if (beforeInput.defaultPrevented) {
+        console.warn('⚠️ beforeinput foi cancelado para:', char);
+        continue;
+      }
+
+      // Insere o caractere manualmente no DOM
+      const range = selection.getRangeAt(0);
+      const textNode = document.createTextNode(char);
+      range.insertNode(textNode);
+      range.setStartAfter(textNode);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      // Dispara input event
+      const inputEvent = new InputEvent('input', {
+        inputType: 'insertText',
+        data: char,
+        bubbles: true,
+        composed: true
+      });
+      element.dispatchEvent(inputEvent);
+      
+      // Pequeno delay para parecer natural
+      if (i < text.length - 1) {
+        await new Promise(r => setTimeout(r, 5)); // 5ms entre caracteres
+      }
+    }
+    
+    console.log('✅ Digitação completa!');
+  } 
+  // Para input/textarea normais
+  else if (element.setSelectionRange) {
+    const start = element.selectionStart || 0;
+    element.value = element.value.substring(0, start) + text + element.value.substring(element.selectionEnd || start);
+    element.selectionStart = element.selectionEnd = start + text.length;
+    
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    console.log('✅ Texto inserido em input/textarea');
   }
-
-  // Cria DataTransfer com o texto
-  const dataTransfer = new DataTransfer();
-  dataTransfer.setData('text/plain', text);
-  dataTransfer.setData('text/html', text.replace(/\n/g, '<br>'));
-
-  // Dispara evento de PASTE
-  const pasteEvent = new ClipboardEvent('paste', {
-    bubbles: true,
-    cancelable: true,
-    composed: true,
-    clipboardData: dataTransfer
-  });
-
-  element.dispatchEvent(pasteEvent);
-
-  // Aguarda processamento
-  await new Promise(r => requestAnimationFrame(r));
-  await new Promise(r => requestAnimationFrame(r));
-  await new Promise(r => setTimeout(r, 100));
-  
-  console.log('✓ Texto colado instantaneamente');
 }
 
 // ===============================
