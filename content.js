@@ -35,7 +35,7 @@ function createMacroPanel() {
   const searchInput = panel.querySelector('#macro-search');
   const macroList = panel.querySelector('#macro-list');
   
-  // Handlers normais primeiro - ANTES de qualquer bloqueio
+  // Handlers normais
   searchInput.addEventListener('input', handleSearch, false);
   searchInput.addEventListener('keydown', handleKeydown, false);
   
@@ -47,6 +47,23 @@ function createMacroPanel() {
   searchInput.addEventListener('blur', () => {
     console.log('⚠️ Campo de busca PERDEU FOCO!');
   });
+  
+  // Impede que eventos do painel vazem para o Bird (BUBBLE PHASE)
+  panel.addEventListener('click', (e) => {
+    e.stopPropagation();
+  }, false);
+  
+  panel.addEventListener('mousedown', (e) => {
+    e.stopPropagation();
+  }, false);
+  
+  panel.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+  }, false);
+  
+  panel.addEventListener('keyup', (e) => {
+    e.stopPropagation();
+  }, false);
   
   return panel;
 }
@@ -172,31 +189,18 @@ function displayMacros() {
     item.className = 'macro-item' + (i === selectedIndex ? ' selected' : '');
     item.innerHTML = `<span class="cmd"><span class="icon">›</span>${cmd}</span><span class="txt">${txt.substring(0, 50)}</span>`;
     
-    // Handler de clique - captura ANTES de qualquer bloqueio
-    item.addEventListener('mousedown', (e) => {
-      console.log('🖱️ Mousedown no item:', i, cmd);
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      
-      // Seleciona IMEDIATAMENTE no mousedown
-      selectMacro(i);
-    }, true); // CAPTURE PHASE para executar antes de tudo
-    
-    // Bloqueia click e mouseup para não vazar
+      // Handler de clique simples
     item.addEventListener('click', (e) => {
-      console.log('🖱️ Click no item (bloqueado):', i);
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    }, true);
+      console.log('🖱️ Click no item:', i, cmd);
+      e.stopPropagation(); // Apenas bloqueia propagação, não preventDefault
+      selectMacro(i);
+    }, false);
     
-    item.addEventListener('mouseup', (e) => {
-      console.log('🖱️ Mouseup no item (bloqueado):', i);
-      e.preventDefault();
+    // Bloqueia mousedown para não vazar para fora
+    item.addEventListener('mousedown', (e) => {
+      console.log('🖱️ Mousedown no item:', i);
       e.stopPropagation();
-      e.stopImmediatePropagation();
-    }, true);
+    }, false);
     
     // Hover atualiza seleção
     item.addEventListener('mouseenter', () => {
@@ -579,28 +583,46 @@ document.addEventListener('keydown', (e) => {
   }
 }, true);
 
-// === BLOQUEIO ULTRA-AGRESSIVO PARA BIRD ===
-// Bloqueia TUDO que vem do painel em CAPTURE PHASE
-const blockAllBirdEvents = (e) => {
+// === BLOQUEIO INTELIGENTE PARA BIRD ===
+// Bloqueia propagação APENAS no nível do painel (não nos filhos)
+document.addEventListener('click', (e) => {
   if (macroPanel && macroPanel.style.display !== 'none') {
     if (macroPanel.contains(e.target)) {
-      console.log('🛡️ [CAPTURE] Bloqueando', e.type, 'para Bird');
-      e.stopPropagation();
-      e.stopImmediatePropagation();
+      console.log('🛡️ Bloqueando click para Bird');
+      // Apenas stopPropagation no final da cadeia (bubble)
     }
   }
-};
+}, false); // BUBBLE PHASE - depois de processar internamente
 
-// Lista COMPLETA de eventos para bloquear
-const allEvents = [
-  'click', 'mousedown', 'mouseup', 'mousemove', 'mouseover', 'mouseout',
-  'keydown', 'keyup', 'keypress',
-  'touchstart', 'touchend', 'touchmove',
-  'pointerdown', 'pointerup', 'pointermove',
-  'focusin', 'focusout', 'focus', 'blur'
-];
+document.addEventListener('mousedown', (e) => {
+  if (macroPanel && macroPanel.style.display !== 'none') {
+    if (macroPanel.contains(e.target)) {
+      console.log('🛡️ Bloqueando mousedown para Bird');
+    }
+  }
+}, false);
 
-// Aplica bloqueio em CAPTURE para TODOS os eventos
-allEvents.forEach(eventType => {
-  document.addEventListener(eventType, blockAllBirdEvents, true);
-});
+document.addEventListener('mouseup', (e) => {
+  if (macroPanel && macroPanel.style.display !== 'none') {
+    if (macroPanel.contains(e.target)) {
+      console.log('🛡️ Bloqueando mouseup para Bird');
+    }
+  }
+}, false);
+
+// Para teclado, bloqueia em BUBBLE depois do handler processar
+document.addEventListener('keydown', (e) => {
+  if (macroPanel && macroPanel.style.display !== 'none') {
+    if (macroPanel.contains(e.target)) {
+      console.log('🛡️ Bloqueando keydown para Bird:', e.key);
+    }
+  }
+}, false);
+
+document.addEventListener('keyup', (e) => {
+  if (macroPanel && macroPanel.style.display !== 'none') {
+    if (macroPanel.contains(e.target)) {
+      console.log('🛡️ Bloqueando keyup para Bird');
+    }
+  }
+}, false);
