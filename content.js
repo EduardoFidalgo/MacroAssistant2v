@@ -7,65 +7,66 @@ let filteredMacros = [];
 // === CRIAR PAINEL ===
 function createMacroPanel() {
   if (macroPanel && document.body.contains(macroPanel)) return macroPanel;
-  
-  const panel = document.createElement('div');
-  panel.id = 'macro-paste-panel';
-  
-  // Atributos para garantir que fique acima de modais
-  panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-modal', 'false');
-  
-  // Força estilos inline com !important via cssText
-  panel.style.cssText = `
+
+  // Cria container isolado
+  const host = document.createElement('div');
+  host.style.cssText = `
     position: fixed !important;
     z-index: 2147483647 !important;
-    pointer-events: auto !important;
-    isolation: isolate !important;
-    transform: translateZ(0) !important;
   `;
-  
+  document.body.appendChild(host);
+
+  // 🔥 Cria Shadow Root para isolar eventos e CSS
+  const shadow = host.attachShadow({ mode: 'open' });
+
+  const panel = document.createElement('div');
+  panel.id = 'macro-paste-panel';
+
   panel.innerHTML = `
-    <input type="text" id="macro-search" placeholder="Buscar..." autocomplete="off">
+    <style>
+      #macro-paste-panel {
+        width: 420px;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 12px 32px rgba(0,0,0,0.15);
+        font-family: sans-serif;
+      }
+      #macro-search {
+        width: 100%;
+        padding: 10px;
+        border: none;
+        border-bottom: 1px solid #eee;
+        outline: none;
+      }
+      #macro-list {
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .macro-item {
+        padding: 10px;
+        cursor: pointer;
+      }
+      .macro-item.selected {
+        background: #007aff;
+        color: white;
+      }
+    </style>
+
+    <input type="text" id="macro-search" placeholder="Buscar...">
     <div id="macro-list"></div>
   `;
-  
-  document.body.appendChild(panel);
-  macroPanel = panel;
-  
-  const searchInput = panel.querySelector('#macro-search');
-  const macroList = panel.querySelector('#macro-list');
-  
-  // Handlers normais
-  searchInput.addEventListener('input', handleSearch, false);
-  searchInput.addEventListener('keydown', handleKeydown, false);
-  
-  // Log quando o input recebe foco
-  searchInput.addEventListener('focus', () => {
-    console.log('✅ Campo de busca FOCADO!');
-  });
-  
-  searchInput.addEventListener('blur', () => {
-    console.log('⚠️ Campo de busca PERDEU FOCO!');
-  });
-  
-  // Impede que eventos do painel vazem para o Bird (BUBBLE PHASE)
-  panel.addEventListener('click', (e) => {
-    e.stopPropagation();
-  }, false);
-  
-  panel.addEventListener('mousedown', (e) => {
-    e.stopPropagation();
-  }, false);
-  
-  panel.addEventListener('keydown', (e) => {
-    e.stopPropagation();
-  }, false);
-  
-  panel.addEventListener('keyup', (e) => {
-    e.stopPropagation();
-  }, false);
-  
-  return panel;
+
+  shadow.appendChild(panel);
+
+  macroPanel = host; // IMPORTANTE: agora o painel é o HOST do shadow
+  macroPanel.shadow = shadow; // salvar referência
+
+  shadow.getElementById('macro-search').addEventListener('input', handleSearch, false);
+  shadow.getElementById('macro-search').addEventListener('keydown', handleKeydown, false);
+
+  return macroPanel;
 }
 
 // === POSICIONAR PAINEL ===
