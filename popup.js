@@ -7,11 +7,16 @@ const exportButton = document.getElementById('exportMacros');
 const importButton = document.getElementById('importMacros');
 const deleteAllButton = document.getElementById('deleteAll');
 const fileInput = document.getElementById('fileInput');
+const searchInput = document.getElementById('searchMacros');
+
+// Armazena todas as macros para busca
+let allMacros = {};
 
 // === CARREGAR MACROS ===
-function loadMacros() {
+function loadMacros(filterText = '') {
   chrome.storage.local.get(['macros'], (result) => {
-    const macros = result.macros || {};
+    allMacros = result.macros || {};
+    const macros = allMacros;
     macroList.innerHTML = '';
     
     if (Object.keys(macros).length === 0) {
@@ -19,7 +24,19 @@ function loadMacros() {
       return;
     }
     
-    Object.entries(macros).forEach(([cmd, txt]) => {
+    // Filtra as macros se houver texto de busca
+    const filtered = Object.entries(macros).filter(([cmd, txt]) => {
+      if (!filterText) return true;
+      const search = filterText.toLowerCase();
+      return cmd.toLowerCase().includes(search) || txt.toLowerCase().includes(search);
+    });
+    
+    if (filtered.length === 0) {
+      macroList.innerHTML = '<div style="text-align:center;padding:20px;color:#999;font-size:12px;">Nenhuma macro encontrada</div>';
+      return;
+    }
+    
+    filtered.forEach(([cmd, txt]) => {
       const item = document.createElement('div');
       item.className = 'macro';
       item.innerHTML = `
@@ -76,7 +93,9 @@ function deleteMacro(cmd) {
   chrome.storage.local.get(['macros'], (result) => {
     const macros = result.macros || {};
     delete macros[cmd];
-    chrome.storage.local.set({ macros }, loadMacros);
+    chrome.storage.local.set({ macros }, () => {
+      loadMacros(searchInput.value.trim());
+    });
   });
 }
 
@@ -161,6 +180,11 @@ exportButton.addEventListener('click', exportMacros);
 importButton.addEventListener('click', importMacros);
 deleteAllButton.addEventListener('click', deleteAllMacros);
 fileInput.addEventListener('change', handleFileImport);
+
+// Busca de macros
+searchInput.addEventListener('input', (e) => {
+  loadMacros(e.target.value.trim());
+});
 
 commandInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') textInput.focus();

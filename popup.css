@@ -77,6 +77,30 @@ h1 {
   transform: translateY(0);
 }
 
+/* === BUSCA === */
+.search-box {
+  margin-top: 16px;
+  margin-bottom: 12px;
+}
+
+.search-box input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  background: white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s;
+}
+
+.search-box input:focus {
+  border-color: #ff69b4;
+  box-shadow: 0 2px 12px rgba(255, 105, 180, 0.2);
+}
+
 /* === LISTA === */
 .list {
   max-height: 300px;
