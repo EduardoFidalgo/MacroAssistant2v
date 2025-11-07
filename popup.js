@@ -10,7 +10,7 @@ const fileInput = document.getElementById('fileInput');
 
 // === CARREGAR MACROS ===
 function loadMacros() {
-  chrome.storage.sync.get(['macros'], (result) => {
+  chrome.storage.local.get(['macros'], (result) => {
     const macros = result.macros || {};
     macroList.innerHTML = '';
     
@@ -51,11 +51,18 @@ function addMacro() {
     return;
   }
   
-  chrome.storage.sync.get(['macros'], (result) => {
+  chrome.storage.local.get(['macros'], (result) => {
     const macros = result.macros || {};
+    
+    // Verifica limite de 300 macros
+    if (Object.keys(macros).length >= 300 && !macros[cmd]) {
+      alert('Limite de 300 macros atingido! Remova algumas antes de adicionar novas.');
+      return;
+    }
+    
     macros[cmd] = txt;
     
-    chrome.storage.sync.set({ macros }, () => {
+    chrome.storage.local.set({ macros }, () => {
       commandInput.value = '';
       textInput.value = '';
       loadMacros();
@@ -66,16 +73,16 @@ function addMacro() {
 
 // === DELETAR MACRO ===
 function deleteMacro(cmd) {
-  chrome.storage.sync.get(['macros'], (result) => {
+  chrome.storage.local.get(['macros'], (result) => {
     const macros = result.macros || {};
     delete macros[cmd];
-    chrome.storage.sync.set({ macros }, loadMacros);
+    chrome.storage.local.set({ macros }, loadMacros);
   });
 }
 
 // === EXPORTAR MACROS ===
 function exportMacros() {
-  chrome.storage.sync.get(['macros'], (result) => {
+  chrome.storage.local.get(['macros'], (result) => {
     const macros = result.macros || {};
     
     if (Object.keys(macros).length === 0) {
@@ -113,11 +120,17 @@ function handleFileImport(e) {
         return;
       }
       
-      chrome.storage.sync.get(['macros'], (result) => {
+      chrome.storage.local.get(['macros'], (result) => {
         const currentMacros = result.macros || {};
         const merged = { ...currentMacros, ...importedMacros };
         
-        chrome.storage.sync.set({ macros: merged }, () => {
+        // Verifica limite de 300 macros
+        if (Object.keys(merged).length > 300) {
+          alert(`Erro: O total de macros ultrapassaria o limite de 300!\nAtual: ${Object.keys(currentMacros).length}\nImportando: ${Object.keys(importedMacros).length}\nTotal: ${Object.keys(merged).length}`);
+          return;
+        }
+        
+        chrome.storage.local.set({ macros: merged }, () => {
           loadMacros();
           alert(`${Object.keys(importedMacros).length} macro(s) importada(s)!`);
         });
@@ -136,7 +149,7 @@ function deleteAllMacros() {
     return;
   }
   
-  chrome.storage.sync.set({ macros: {} }, () => {
+  chrome.storage.local.set({ macros: {} }, () => {
     loadMacros();
     alert('Todas as macros foram excluídas!');
   });

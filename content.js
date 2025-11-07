@@ -47,7 +47,7 @@ function createPanel() {
       width:100%; padding:10px; border:none; border-bottom:1px solid #eee;
       font-size:14px; outline:none; height:40px; line-height:20px;
       font-family:sans-serif; box-sizing:border-box;
-      white-space:nowrap; overflow:hidden;
+      white-space:nowrap; overflow:hidden; color:black!important
     " data-placeholder="Buscar macro..."></div>
     <div id="macro-list" style="max-height:260px; overflow-y:auto;"></div>
   `;
@@ -151,7 +151,7 @@ function openPanel(el) {
   currentInput = el;
   createPanel();
 
-  chrome.storage.sync.get(["macros"], res => {
+  chrome.storage.local.get(["macros"], res => {
     macros = res.macros || {};
     filtered = Object.entries(macros);
     selected = 0;
@@ -213,7 +213,7 @@ function renderList() {
       background:${i === selected ? "#ffeaf6" : "white"};
     `;
     item.innerHTML = `
-      <div style="font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"> > ${cmd} </div>
+      <div style="font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:black!important"> > ${cmd} </div>
       <div style="font-size:12px; color:#666; margin-top:3px; opacity:0.8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${preview}</div>
     `;
 
