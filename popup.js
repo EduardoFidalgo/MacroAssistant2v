@@ -8,6 +8,9 @@ const importButton = document.getElementById('importMacros');
 const deleteAllButton = document.getElementById('deleteAll');
 const fileInput = document.getElementById('fileInput');
 const searchInput = document.getElementById('searchMacros');
+const shortcutKeyInput = document.getElementById('shortcutKey');
+const saveShortcutButton = document.getElementById('saveShortcut');
+const helpShortcut = document.getElementById('helpShortcut');
 
 // Armazena todas as macros para busca
 let allMacros = {};
@@ -55,6 +58,43 @@ function loadMacros(filterText = '') {
         deleteMacro(cmd);
       });
     });
+  });
+}
+
+// === CARREGAR ATALHO ===
+function loadShortcut() {
+  chrome.storage.local.get(['shortcutKey'], (result) => {
+    const shortcut = result.shortcutKey || '>';
+    shortcutKeyInput.value = shortcut;
+    helpShortcut.textContent = shortcut;
+  });
+}
+
+// === SALVAR ATALHO ===
+function saveShortcut() {
+  const key = shortcutKeyInput.value.trim();
+  
+  if (!key || key.length !== 1) {
+    alert('Digite apenas um caractere para o atalho!');
+    return;
+  }
+  
+  chrome.storage.local.set({ shortcutKey: key }, () => {
+    helpShortcut.textContent = key;
+    
+    // Notifica o content script sobre a mudança
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        chrome.tabs.sendMessage(tab.id, { 
+          action: 'updateShortcut', 
+          shortcutKey: key 
+        }).catch(() => {
+          // Ignora erros de tabs que não têm o content script
+        });
+      });
+    });
+    
+    alert(`Atalho atualizado para: ${key}\nRecarregue as páginas abertas para aplicar a mudança.`);
   });
 }
 
@@ -180,10 +220,23 @@ exportButton.addEventListener('click', exportMacros);
 importButton.addEventListener('click', importMacros);
 deleteAllButton.addEventListener('click', deleteAllMacros);
 fileInput.addEventListener('change', handleFileImport);
+saveShortcutButton.addEventListener('click', saveShortcut);
 
 // Busca de macros
 searchInput.addEventListener('input', (e) => {
   loadMacros(e.target.value.trim());
+});
+
+// Permite apenas um caractere no campo de atalho
+shortcutKeyInput.addEventListener('input', (e) => {
+  if (e.target.value.length > 1) {
+    e.target.value = e.target.value.slice(-1);
+  }
+});
+
+// Salva atalho ao pressionar Enter
+shortcutKeyInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') saveShortcut();
 });
 
 commandInput.addEventListener('keypress', (e) => {
@@ -194,5 +247,6 @@ textInput.addEventListener('keypress', (e) => {
 });
 
 // === INICIALIZAR ===
+loadShortcut();
 loadMacros();
 commandInput.focus();

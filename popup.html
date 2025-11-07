@@ -10,6 +10,12 @@
   <div class="container">
     <h1>OPS Expander 2.0</h1>
     
+    <div class="shortcut-config">
+      <label for="shortcutKey">Tecla de atalho:</label>
+      <input type="text" id="shortcutKey" maxlength="1" placeholder=">">
+      <button id="saveShortcut" class="btn-save">Salvar</button>
+    </div>
+    
     <div class="form">
       <input type="text" id="command" placeholder="Comando">
       <textarea id="text" placeholder="Texto da macro..." rows="3"></textarea>
@@ -17,7 +23,7 @@
     </div>
 
     <div class="help">
-      Digite <code>&gt;</code> em qualquer campo
+      Digite <code id="helpShortcut">&gt;</code> em qualquer campo
     </div>
 
     <div style="text-align: center; color: #999; font-size: 11px; margin: 8px 0 4px 0;">

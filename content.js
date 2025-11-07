@@ -2,6 +2,19 @@ let panel, searchInput, listEl, currentInput;
 let macros = {};
 let filtered = [];
 let selected = 0;
+let shortcutKey = '>'; // Tecla de atalho padrão
+
+// Carrega a tecla de atalho personalizada
+chrome.storage.local.get(['shortcutKey'], (result) => {
+  shortcutKey = result.shortcutKey || '>';
+});
+
+// Escuta mudanças na tecla de atalho
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'updateShortcut') {
+    shortcutKey = message.shortcutKey || '>';
+  }
+});
 
 (function () {
   const style = document.createElement("style");
@@ -282,8 +295,12 @@ function insertMacro(text) {
 document.addEventListener("keydown", e => {
   if (panel && e.target === searchInput) return;
 
+  // Verifica se a tecla pressionada é o atalho personalizado
+  const isShortcutKey = e.key === shortcutKey || 
+    (shortcutKey === '>' && e.keyCode === 190 && e.shiftKey);
+
   if (
-    (e.key === ">" || (e.keyCode === 190 && e.shiftKey)) &&
+    isShortcutKey &&
     (
       e.target.isContentEditable ||
       e.target.tagName === "TEXTAREA" ||
