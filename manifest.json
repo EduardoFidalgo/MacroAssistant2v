@@ -7,13 +7,16 @@
   "permissions": [
     "storage",
     "activeTab",
-    "clipboardWrite"
+    "clipboardWrite",
+    "tabs"
   ],
 
   "action": {
     "default_popup": "popup.html",
     "default_icon": "icons/icon128.svg"
   },
+
+  "options_page": "opsexpender/dashboard.html",
 
   "content_scripts": [
     {

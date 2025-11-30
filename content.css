@@ -106,7 +106,7 @@
   letter-spacing: 0.2px;
 }
 
-/* === ÍCONE === */
+/* === ÍCONE ===
 .icon {
   display: inline-flex;
   align-items: center;
@@ -121,7 +121,7 @@
   font-weight: bold;
   box-shadow: 0 2px 6px rgba(255, 105, 180, 0.3);
   flex-shrink: 0;
-}
+} */
 
 /* === TEXTO === */
 .txt {

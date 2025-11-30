@@ -28,9 +28,10 @@ function loadMacros(filterText = '') {
     }
     
     // Filtra as macros se houver texto de busca
-    const filtered = Object.entries(macros).filter(([cmd, txt]) => {
+    const filtered = Object.entries(macros).filter(([cmd, data]) => {
       if (!filterText) return true;
       const search = filterText.toLowerCase();
+      const txt = typeof data === 'string' ? data : data.text;
       return cmd.toLowerCase().includes(search) || txt.toLowerCase().includes(search);
     });
     
@@ -39,13 +40,23 @@ function loadMacros(filterText = '') {
       return;
     }
     
-    filtered.forEach(([cmd, txt]) => {
+    filtered.forEach(([cmd, data]) => {
+      // Suporta formato antigo (string) e novo (objeto)
+      const txt = typeof data === 'string' ? data : data.text;
+      const createdAt = data.createdAt ? new Date(data.createdAt).toLocaleString('pt-BR') : 'N/A';
+      const updatedAt = data.updatedAt ? new Date(data.updatedAt).toLocaleString('pt-BR') : null;
+      
       const item = document.createElement('div');
       item.className = 'macro';
       item.innerHTML = `
         <div class="macro-info">
           <div class="macro-cmd"><span class="macro-icon">›</span>${cmd}</div>
           <div class="macro-txt">${txt}</div>
+          <div class="macro-dates">
+            <small style="color:#999;font-size:10px;">
+              Criado: ${createdAt}${updatedAt ? ` | Atualizado: ${updatedAt}` : ''}
+            </small>
+          </div>
         </div>
         <button class="delete" data-cmd="${cmd}">Remover</button>
       `;
@@ -117,7 +128,27 @@ function addMacro() {
       return;
     }
     
-    macros[cmd] = txt;
+    const now = new Date().toISOString();
+    const isUpdate = macros[cmd] !== undefined;
+    
+    // Se já existe, mantém a data de criação e adiciona data de atualização
+    if (isUpdate) {
+      const existingData = typeof macros[cmd] === 'string' 
+        ? { text: macros[cmd], createdAt: now } 
+        : macros[cmd];
+      
+      macros[cmd] = {
+        text: txt,
+        createdAt: existingData.createdAt || now,
+        updatedAt: now
+      };
+    } else {
+      // Nova macro
+      macros[cmd] = {
+        text: txt,
+        createdAt: now
+      };
+    }
     
     chrome.storage.local.set({ macros }, () => {
       commandInput.value = '';
@@ -179,19 +210,35 @@ function handleFileImport(e) {
         return;
       }
       
+      // Converte macros antigas (string) para novo formato (objeto com timestamps)
+      const now = new Date().toISOString();
+      const normalizedImported = {};
+      Object.entries(importedMacros).forEach(([cmd, data]) => {
+        if (typeof data === 'string') {
+          // Formato antigo - converte para novo
+          normalizedImported[cmd] = {
+            text: data,
+            createdAt: now
+          };
+        } else {
+          // Já está no novo formato
+          normalizedImported[cmd] = data;
+        }
+      });
+      
       chrome.storage.local.get(['macros'], (result) => {
         const currentMacros = result.macros || {};
-        const merged = { ...currentMacros, ...importedMacros };
+        const merged = { ...currentMacros, ...normalizedImported };
         
         // Verifica limite de 300 macros
         if (Object.keys(merged).length > 300) {
-          alert(`Erro: O total de macros ultrapassaria o limite de 300!\nAtual: ${Object.keys(currentMacros).length}\nImportando: ${Object.keys(importedMacros).length}\nTotal: ${Object.keys(merged).length}`);
+          alert(`Erro: O total de macros ultrapassaria o limite de 300!\nAtual: ${Object.keys(currentMacros).length}\nImportando: ${Object.keys(normalizedImported).length}\nTotal: ${Object.keys(merged).length}`);
           return;
         }
         
         chrome.storage.local.set({ macros: merged }, () => {
           loadMacros();
-          alert(`${Object.keys(importedMacros).length} macro(s) importada(s)!`);
+          alert(`${Object.keys(normalizedImported).length} macro(s) importada(s)!`);
         });
       });
     } catch (err) {
@@ -244,6 +291,21 @@ commandInput.addEventListener('keypress', (e) => {
 });
 textInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter' && e.ctrlKey) addMacro();
+});
+
+document.getElementById("openDashboard").addEventListener("click", () => {
+  chrome.tabs.create({
+    url: chrome.runtime.getURL("opsexpender/dashboard.html")
+  });
+});
+
+// === SINCRONIZAÇÃO COM O STORAGE ===
+// Monitora mudanças no storage para sincronizar com o dashboard
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes.macros) {
+    // Recarrega as macros quando houver mudanças
+    loadMacros(searchInput.value.trim());
+  }
 });
 
 // === INICIALIZAR ===

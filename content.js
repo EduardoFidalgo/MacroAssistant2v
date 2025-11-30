@@ -9,10 +9,29 @@ chrome.storage.local.get(['shortcutKey'], (result) => {
   shortcutKey = result.shortcutKey || '>';
 });
 
-// Escuta mudanças na tecla de atalho
+// Escuta mudanças na tecla de atalho e nas macros
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'updateShortcut') {
     shortcutKey = message.shortcutKey || '>';
+  }
+});
+
+// Sincroniza macros em tempo real quando o painel está aberto
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes.macros && panel && panel.style.display === 'block') {
+    // Atualiza macros e re-renderiza a lista se o painel estiver aberto
+    macros = changes.macros.newValue || {};
+    filtered = Object.entries(macros);
+    const searchTerm = searchInput ? searchInput.textContent.trim() : '';
+    if (searchTerm) {
+      filtered = filtered.filter(([cmd, data]) => {
+        const txt = typeof data === 'string' ? data : data.text;
+        return cmd.toLowerCase().includes(searchTerm.toLowerCase()) || 
+               txt.toLowerCase().includes(searchTerm.toLowerCase());
+      });
+    }
+    selected = 0;
+    renderList();
   }
 });
 
@@ -108,7 +127,11 @@ function createPanel() {
       renderList();
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (filtered.length > 0) insertMacro(filtered[selected][1]);
+      if (filtered.length > 0) {
+        const data = filtered[selected][1];
+        const text = typeof data === 'string' ? data : data.text;
+        insertMacro(text);
+      }
     } else if (e.key === "Escape") {
       e.preventDefault();
       closePanel();
@@ -200,9 +223,10 @@ function closePanel() {
 
 function applyFilter(q) {
   q = q.toLowerCase();
-  filtered = Object.entries(macros).filter(([cmd, txt]) =>
-    cmd.toLowerCase().includes(q) || txt.toLowerCase().includes(q)
-  );
+  filtered = Object.entries(macros).filter(([cmd, data]) => {
+    const txt = typeof data === 'string' ? data : data.text;
+    return cmd.toLowerCase().includes(q) || txt.toLowerCase().includes(q);
+  });
   selected = 0;
   renderList();
 }
@@ -214,7 +238,8 @@ function renderList() {
     return;
   }
 
-  filtered.forEach(([cmd, text], i) => {
+  filtered.forEach(([cmd, data], i) => {
+    const text = typeof data === 'string' ? data : data.text;
     let preview = text.trim();
     const maxLen = 55;
     if (preview.length > maxLen) preview = preview.slice(0, maxLen) + "...";
@@ -324,9 +349,13 @@ document.addEventListener("keydown", e => {
     renderList();
   } else if (e.key === "Enter") {
     e.preventDefault();
-    insertMacro(filtered[selected][1]);
+    const data = filtered[selected][1];
+    const text = typeof data === 'string' ? data : data.text;
+    insertMacro(text);
   } else if (e.key === "Escape") {
     e.preventDefault();
     closePanel();
   }
 }, { capture: true });
+
+
